@@ -1,0 +1,91 @@
+// ============================================
+// EJEMPLO 1: Búsqueda básica en Description
+// searchField: 0 = Description
+// ============================================
+{
+  "query": "despliegue producción servicio interrupción",
+  "searchField": 0
+}
+
+// ============================================
+// EJEMPLO 2: Búsqueda en Analysis con filtros
+// searchField: 1 = Analysis
+// ============================================
+{
+  "query": "causa principal presión fecha límite",
+  "searchField": 1,
+  "dateFrom": "2025-01-01T00:00:00",
+  "dateTo": "2025-12-31T23:59:59",
+  "minScore": 0.7
+}
+
+// ============================================
+// EJEMPLO 3: Búsqueda en Consequences
+// searchField: 2 = Consequences
+// ============================================
+{
+  "query": "interrupción servicio usuarios afectados",
+  "searchField": 2
+}
+
+// ============================================
+// EJEMPLO 4: Búsqueda en Lesson (Aprendizaje)
+// searchField: 3 = Lesson
+// ============================================
+{
+  "query": "proceso validación aprobación despliegue preventivo",
+  "searchField": 3
+}
+
+// ============================================
+// EJEMPLO 5: Búsqueda completa con todos los filtros
+// searchField: 3 = Lesson
+// ============================================
+{
+  "query": "proceso obligatorio validación antes despliegue",
+  "searchField": 3,
+  "dateFrom": "2025-03-01T00:00:00",
+  "dateTo": "2025-03-31T23:59:59",
+  "minScore": 0.75
+}
+
+// ============================================
+// EJEMPLO 6: Búsqueda con paginación
+// searchField: 0 = Description
+// pageNumber: 2 (segunda página)
+// pageSize: 25 (25 resultados por página)
+// ============================================
+{
+  "query": "despliegue producción servicio interrupción",
+  "searchField": 0,
+  "pageNumber": 2,
+  "pageSize": 25
+}
+
+// ============================================
+// EJEMPLO 7: Búsqueda completa con paginación
+// searchField: 3 = Lesson
+// ============================================
+{
+  "query": "proceso obligatorio validación antes despliegue",
+  "searchField": 3,
+  "dateFrom": "2025-03-01T00:00:00",
+  "dateTo": "2025-03-31T23:59:59",
+  "minScore": 0.75,
+  "pageNumber": 1,
+  "pageSize": 50
+}
+
+// ============================================
+// VALORES DEL ENUM SearchFieldType:
+// 0 = Description
+// 1 = Analysis
+// 2 = Consequences
+// 3 = Lesson
+// ============================================
+// 
+// PARÁMETROS DE PAGINACIÓN:
+// - pageNumber: Número de página (base 1, por defecto: 1)
+// - pageSize: Cantidad de resultados por página
+//   Valores permitidos: 10, 25, 50, 100 (por defecto: 10)
+// ============================================
