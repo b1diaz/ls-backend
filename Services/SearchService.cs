@@ -243,7 +243,7 @@ public class SearchService : ISearchService
                 },
                 outputs: new[]
                 {
-                    new OutputFieldMappingEntry("suggestDisplay") { TargetName = "suggestDisplay" }
+                    new OutputFieldMappingEntry("suggestDisplay") { TargetName = "suggestDisplay_enriched" }
                 },
                 uri: _config.FormatearSuggestUrl)
             {
@@ -266,7 +266,7 @@ public class SearchService : ISearchService
                 OutputFieldMappings =
                 {
                     new FieldMapping("/document/key_phrases") { TargetFieldName = "keyPhrases" },
-                    new FieldMapping("/document/suggestDisplay") { TargetFieldName = "suggestDisplay" }
+                    new FieldMapping("/document/suggestDisplay_enriched") { TargetFieldName = "suggestDisplay" }
                 }
             };
 
