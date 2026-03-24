@@ -5,7 +5,7 @@ using Microsoft.Extensions.Options;
 
 namespace LeccionesAprendidas.Services;
 
-public class OpenAIService
+public class OpenAIService : IOpenAIService
 {
     private readonly OpenAIClient _client;
     private readonly string _embeddingDeployment;

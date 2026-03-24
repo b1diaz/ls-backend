@@ -8,7 +8,7 @@ using Microsoft.Extensions.Options;
 
 namespace LeccionesAprendidas.Services;
 
-public class SearchService
+public class SearchService : ISearchService
 {
     private readonly SearchIndexClient _adminClient;
     private readonly SearchClient _searchClient;
@@ -198,6 +198,36 @@ public class SearchService
     }
 
 
+    public async Task<Result<(int Reindexed, int Failed)>> IndexLessonsAsync(List<LessonLearned> lessons)
+    {
+        const int batchSize = 1000;
+        int reindexed = 0;
+        int failed = 0;
+
+        for (int i = 0; i < lessons.Count; i += batchSize)
+        {
+            var batch = lessons.Skip(i).Take(batchSize).ToList();
+
+            try
+            {
+                var indexBatch = IndexDocumentsBatch.Upload(batch);
+                var response = await _searchClient.IndexDocumentsAsync(indexBatch);
+
+                foreach (var result in response.Value.Results)
+                {
+                    if (result.Succeeded) reindexed++;
+                    else failed++;
+                }
+            }
+            catch (Exception ex)
+            {
+                return Result<(int, int)>.Failure($"Error al procesar lote {i / batchSize + 1}: {ex.Message}");
+            }
+        }
+
+        return Result<(int, int)>.Success((reindexed, failed));
+    }
+
     public async Task<Result> IndexLessonAsync(LessonLearned lesson)
     {
         try
@@ -291,16 +321,14 @@ public class SearchService
             // Configurar búsqueda vectorial
             options.VectorSearch ??= new VectorSearchOptions();
 
-            // KNearestNeighborsCount debe ser al menos el tamaño de página solicitado
-            // Para mejores resultados, podemos usar un múltiplo del tamaño de página
-            // pero por ahora usamos el tamaño de página directamente
+            // KNearestNeighborsCount debe cubrir todos los candidatos necesarios antes de aplicar Skip+Size
             options.VectorSearch.Queries.Add(new VectorizedQuery(queryEmbedding)
             {
-                KNearestNeighborsCount = take,
+                KNearestNeighborsCount = skip + take,
                 Fields = { embeddingField }
             });
 
-            var response = await _searchClient.SearchAsync<LessonLearned>("", options);
+            var response = await _searchClient.SearchAsync<LessonLearned>(queryText, options);
             var results = response.Value.GetResults();
             var totalCount = response.Value.TotalCount ?? 0;
 

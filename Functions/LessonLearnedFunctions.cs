@@ -10,16 +10,16 @@ namespace LeccionesAprendidas.Functions;
 
 public class LessonLearnedFunctions
 {
-    private readonly OpenAIService _openAIService;
-    private readonly CosmosDbService _cosmosDbService;
-    private readonly SearchService _searchService;
+    private readonly IOpenAIService _openAIService;
+    private readonly ICosmosDbService _cosmosDbService;
+    private readonly ISearchService _searchService;
     private readonly IValidator<CreateLessonRequest> _createValidator;
     private readonly IValidator<SearchLessonRequest> _searchValidator;
 
     public LessonLearnedFunctions(
-        OpenAIService openAIService,
-        CosmosDbService cosmosDbService,
-        SearchService searchService,
+        IOpenAIService openAIService,
+        ICosmosDbService cosmosDbService,
+        ISearchService searchService,
         IValidator<CreateLessonRequest> createValidator,
         IValidator<SearchLessonRequest> searchValidator)
     {
@@ -92,8 +92,8 @@ public class LessonLearnedFunctions
         if (indexResult.IsError)
             return await CreateErrorResponse(req, HttpStatusCode.InternalServerError, indexResult.Error ?? "Error desconocido al crear crear indice.");
 
-        var response = req.CreateResponse(HttpStatusCode.Created);
-        await response.WriteAsJsonAsync(saveResult.Value);
+        var response = req.CreateResponse(HttpStatusCode.OK);
+        await response.WriteAsJsonAsync(saveResult.Value, HttpStatusCode.Created);
         return response;
     }
 
@@ -130,6 +130,34 @@ public class LessonLearnedFunctions
 
         var response = req.CreateResponse(HttpStatusCode.OK);
         await response.WriteAsJsonAsync(searchResult.Value);
+        return response;
+    }
+
+    [Function("ReindexFromCosmosDb")]
+    public async Task<HttpResponseData> ReindexFromCosmosDbAsync(
+        [HttpTrigger(AuthorizationLevel.Function, "post")] HttpRequestData req)
+    {
+        var lessonsResult = await _cosmosDbService.GetLessonsAsync();
+        if (lessonsResult.IsError)
+            return await CreateErrorResponse(req, HttpStatusCode.InternalServerError, lessonsResult.Error ?? "Error al obtener lecciones de CosmosDB.");
+
+        var lessons = lessonsResult.Value!;
+
+        if (lessons.Count == 0)
+        {
+            var emptyResponse = req.CreateResponse(HttpStatusCode.OK);
+            await emptyResponse.WriteAsJsonAsync(new { Total = 0, Reindexed = 0, Failed = 0 });
+            return emptyResponse;
+        }
+
+        var indexResult = await _searchService.IndexLessonsAsync(lessons);
+        if (indexResult.IsError)
+            return await CreateErrorResponse(req, HttpStatusCode.InternalServerError, indexResult.Error ?? "Error al reindexar lecciones.");
+
+        var (reindexed, failed) = indexResult.Value;
+
+        var response = req.CreateResponse(HttpStatusCode.OK);
+        await response.WriteAsJsonAsync(new { Total = lessons.Count, Reindexed = reindexed, Failed = failed });
         return response;
     }
 

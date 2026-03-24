@@ -10,6 +10,7 @@ public class LessonLearned
     /// Identificador unico de la leccion aprendida.
     /// </summary>
     [JsonProperty("id")]
+    [JsonPropertyName("id")]
     public string Id { get; set; } = Guid.NewGuid().ToString();
 
     /// <summary>

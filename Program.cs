@@ -21,9 +21,9 @@ var host = new HostBuilder()
         services.Configure<AzureSearchOptions>(context.Configuration.GetSection("AzureSearch"));
 
         // Registro de servicios principales
-        services.AddSingleton<OpenAIService>();
-        services.AddSingleton<CosmosDbService>();
-        services.AddSingleton<SearchService>();
+        services.AddSingleton<IOpenAIService, OpenAIService>();
+        services.AddSingleton<ICosmosDbService, CosmosDbService>();
+        services.AddSingleton<ISearchService, SearchService>();
 
         //Registro de Validaciones
         services.AddScoped<IValidator<CreateLessonRequest>, CreateLessonRequestValidator>();
@@ -33,7 +33,7 @@ var host = new HostBuilder()
     .Build();
 
 // Inicializar el índice de búsqueda
-var searchService = host.Services.GetRequiredService<SearchService>();
+var searchService = host.Services.GetRequiredService<ISearchService>();
 await searchService.CreateIndexIfNotExistsAsync();
 
 await host.RunAsync();

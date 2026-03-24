@@ -4,7 +4,7 @@ using LeccionesAprendidas.Models;
 
 namespace LeccionesAprendidas.Services;
 
-public class CosmosDbService
+public class CosmosDbService : ICosmosDbService
 {
     private readonly Container _container;
 
@@ -34,7 +34,7 @@ public class CosmosDbService
         }
         catch (Exception ex)
         {
-            return Result<LessonLearned>.Failure($"Error inesperado al guardar la lección: {ex.Message}");
+            return Result<LessonLearned>.Failure($"Error inesperado al guardar la lecciï¿½n: {ex.Message}");
         }
     }
 
