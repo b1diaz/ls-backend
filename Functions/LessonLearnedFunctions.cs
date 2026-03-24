@@ -200,7 +200,7 @@ public class LessonLearnedFunctions
         var outputRecords = request.Values.Select(record =>
         {
             var d = record.Data;
-            var phrases = d.Phrases.Count > 0 ? string.Join(", ", d.Phrases) : string.Empty;
+            var phrases = d.KeyPhrases.Count > 0 ? string.Join(", ", d.KeyPhrases) : string.Empty;
             var finalText = string.IsNullOrWhiteSpace(phrases)
                 ? $"[{d.Code}] {d.SituationType} - {d.Location}"
                 : $"[{d.Code}] {d.SituationType} - {d.Location} | {phrases}";

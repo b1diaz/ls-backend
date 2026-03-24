@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace LeccionesAprendidas.Models;
 
 public class CreateLessonRequest
@@ -119,7 +121,7 @@ public class FormatearSuggestInputData
     public string SituationType { get; set; } = string.Empty;
     public string Location { get; set; } = string.Empty;
     public string Code { get; set; } = string.Empty;
-    public List<string> Phrases { get; set; } = [];
+    public List<string> KeyPhrases { get; set; } = [];
 }
 
 public class FormatearSuggestResponse
@@ -137,5 +139,6 @@ public class FormatearSuggestOutputRecord
 
 public class FormatearSuggestOutputData
 {
+    [JsonPropertyName("suggestDisplay")]
     public string SuggestDisplay { get; set; } = string.Empty;
 }

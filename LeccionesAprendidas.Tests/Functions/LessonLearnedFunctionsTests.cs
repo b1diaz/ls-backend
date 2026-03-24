@@ -346,7 +346,7 @@ public class LessonLearnedFunctionsTests
                         Code = "EVT-001",
                         SituationType = "Near Miss",
                         Location = "Planta A",
-                        Phrases = ["epi", "altura"]
+                        KeyPhrases = ["epi", "altura"]
                     }
                 }
             ]
@@ -378,7 +378,7 @@ public class LessonLearnedFunctionsTests
                         Code = "EVT-002",
                         SituationType = "Incidente",
                         Location = "Zona B",
-                        Phrases = []
+                        KeyPhrases = []
                     }
                 }
             ]
