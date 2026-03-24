@@ -36,6 +36,11 @@ public class LessonLearnedFunctions
         PropertyNamingPolicy = null
     };
 
+    private static readonly JsonSerializerOptions CamelCaseOptions = new JsonSerializerOptions
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+    };
+
     [Function("RegisterLesson")]
     public async Task<HttpResponseData> RegisterLessonAsync(
         [HttpTrigger(AuthorizationLevel.Function, "post")] HttpRequestData req)
@@ -214,7 +219,8 @@ public class LessonLearnedFunctions
 
         var responsePayload = new FormatearSuggestResponse { Values = outputRecords };
         var response = req.CreateResponse(HttpStatusCode.OK);
-        await response.WriteAsJsonAsync(responsePayload);
+        response.Headers.Add("Content-Type", "application/json");
+        await response.WriteStringAsync(JsonSerializer.Serialize(responsePayload, CamelCaseOptions));
         return response;
     }
 

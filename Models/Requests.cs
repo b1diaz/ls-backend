@@ -118,9 +118,16 @@ public class FormatearSuggestRecord
 
 public class FormatearSuggestInputData
 {
+    [JsonPropertyName("situationType")]
     public string SituationType { get; set; } = string.Empty;
+
+    [JsonPropertyName("location")]
     public string Location { get; set; } = string.Empty;
+
+    [JsonPropertyName("code")]
     public string Code { get; set; } = string.Empty;
+
+    [JsonPropertyName("keyPhrases")]
     public List<string> KeyPhrases { get; set; } = [];
 }
 
