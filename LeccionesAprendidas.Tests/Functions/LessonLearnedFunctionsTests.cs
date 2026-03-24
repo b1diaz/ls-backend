@@ -35,7 +35,6 @@ public class LessonLearnedFunctionsTests
     private static readonly SearchLessonRequest ValidSearchRequest = new()
     {
         Query = "riesgo eléctrico",
-        SearchField = SearchFieldType.Description,
         PageNumber = 1,
         PageSize = 10
     };
@@ -138,6 +137,9 @@ public class LessonLearnedFunctionsTests
         _search
             .Setup(s => s.IndexLessonAsync(It.IsAny<LessonLearned>()))
             .ReturnsAsync(Result.Success());
+        _search
+            .Setup(s => s.TriggerIndexerAsync())
+            .ReturnsAsync(Result.Success());
 
         var req = FakeHttpRequestData.WithJson(ValidCreateRequest);
         var response = await CreateSut().RegisterLessonAsync(req);
@@ -186,7 +188,7 @@ public class LessonLearnedFunctionsTests
         SetupEmbeddingSuccess();
         _search
             .Setup(s => s.SearchLessonsAsync(
-                It.IsAny<string>(), It.IsAny<float[]>(), It.IsAny<SearchFieldType>(),
+                It.IsAny<string>(), It.IsAny<float[]>(),
                 It.IsAny<DateTime?>(), It.IsAny<DateTime?>(), It.IsAny<double?>(),
                 It.IsAny<int>(), It.IsAny<int>()))
             .ReturnsAsync(Result<PaginatedSearchResult>.Failure("Search error"));
@@ -203,7 +205,7 @@ public class LessonLearnedFunctionsTests
         SetupEmbeddingSuccess();
         _search
             .Setup(s => s.SearchLessonsAsync(
-                It.IsAny<string>(), It.IsAny<float[]>(), It.IsAny<SearchFieldType>(),
+                It.IsAny<string>(), It.IsAny<float[]>(),
                 It.IsAny<DateTime?>(), It.IsAny<DateTime?>(), It.IsAny<double?>(),
                 It.IsAny<int>(), It.IsAny<int>()))
             .ReturnsAsync(Result<PaginatedSearchResult>.Success(new PaginatedSearchResult()));
@@ -269,6 +271,128 @@ public class LessonLearnedFunctionsTests
         Assert.Contains("\"Failed\":0", body);
     }
 
+    // ─── SuggestLessons ──────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task SuggestLessons_NullBody_Returns400()
+    {
+        var req = new FakeHttpRequestData("null");
+        var response = await CreateSut().SuggestLessonsAsync(req);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task SuggestLessons_EmptyQuery_Returns400()
+    {
+        var req = FakeHttpRequestData.WithJson(new SuggestLessonRequest { Query = "" });
+        var response = await CreateSut().SuggestLessonsAsync(req);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task SuggestLessons_SuggestFails_Returns500()
+    {
+        _search
+            .Setup(s => s.SuggestLessonsAsync(It.IsAny<string>(), It.IsAny<int>()))
+            .ReturnsAsync(Result<List<string>>.Failure("Search error"));
+
+        var req = FakeHttpRequestData.WithJson(new SuggestLessonRequest { Query = "caída" });
+        var response = await CreateSut().SuggestLessonsAsync(req);
+        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task SuggestLessons_Success_Returns200()
+    {
+        _search
+            .Setup(s => s.SuggestLessonsAsync(It.IsAny<string>(), It.IsAny<int>()))
+            .ReturnsAsync(Result<List<string>>.Success(new List<string> { "[EVT-001] Near Miss - Planta A | caída" }));
+
+        var req = FakeHttpRequestData.WithJson(new SuggestLessonRequest { Query = "caída" });
+        var response = await CreateSut().SuggestLessonsAsync(req);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    // ─── FormatearSuggest ────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task FormatearSuggest_NullBody_Returns400()
+    {
+        var req = new FakeHttpRequestData("null");
+        var response = await CreateSut().FormatearSuggestAsync(req);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task FormatearSuggest_EmptyValues_Returns400()
+    {
+        var req = FakeHttpRequestData.WithJson(new FormatearSuggestRequest { Values = [] });
+        var response = await CreateSut().FormatearSuggestAsync(req);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task FormatearSuggest_WithPhrases_Returns200WithFormattedText()
+    {
+        var request = new FormatearSuggestRequest
+        {
+            Values =
+            [
+                new FormatearSuggestRecord
+                {
+                    RecordId = "1",
+                    Data = new FormatearSuggestInputData
+                    {
+                        Code = "EVT-001",
+                        SituationType = "Near Miss",
+                        Location = "Planta A",
+                        Phrases = ["epi", "altura"]
+                    }
+                }
+            ]
+        };
+
+        var req = FakeHttpRequestData.WithJson(request);
+        var response = await CreateSut().FormatearSuggestAsync(req);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var body = ((FakeHttpResponseData)response).ReadBodyAsString();
+        Assert.Contains("EVT-001", body);
+        Assert.Contains("Near Miss", body);
+        Assert.Contains("epi", body);
+        Assert.Contains("|", body);
+    }
+
+    [Fact]
+    public async Task FormatearSuggest_NoPhrases_Returns200NoPipe()
+    {
+        var request = new FormatearSuggestRequest
+        {
+            Values =
+            [
+                new FormatearSuggestRecord
+                {
+                    RecordId = "2",
+                    Data = new FormatearSuggestInputData
+                    {
+                        Code = "EVT-002",
+                        SituationType = "Incidente",
+                        Location = "Zona B",
+                        Phrases = []
+                    }
+                }
+            ]
+        };
+
+        var req = FakeHttpRequestData.WithJson(request);
+        var response = await CreateSut().FormatearSuggestAsync(req);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var body = ((FakeHttpResponseData)response).ReadBodyAsString();
+        Assert.Contains("EVT-002", body);
+        Assert.DoesNotContain("|", body);
+    }
+
     // ─── RecreateIndex ───────────────────────────────────────────────────────────
 
     [Fact]
@@ -288,6 +412,9 @@ public class LessonLearnedFunctionsTests
     {
         _search
             .Setup(s => s.RecreateIndexAsync())
+            .ReturnsAsync(Result.Success());
+        _search
+            .Setup(s => s.CreateOrUpdateIndexerPipelineAsync())
             .ReturnsAsync(Result.Success());
 
         var req = new FakeHttpRequestData();

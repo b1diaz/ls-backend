@@ -11,7 +11,6 @@ public class SearchLessonRequestValidatorTests
     private static SearchLessonRequest ValidRequest() => new()
     {
         Query = "riesgo eléctrico",
-        SearchField = SearchFieldType.Description,
         PageNumber = 1,
         PageSize = 10
     };
@@ -41,16 +40,6 @@ public class SearchLessonRequestValidatorTests
         var result = await _validator.ValidateAsync(req);
         Assert.False(result.IsValid);
         Assert.Contains(result.Errors, e => e.PropertyName == nameof(SearchLessonRequest.Query));
-    }
-
-    [Fact]
-    public async Task Invalid_SearchField_Fails()
-    {
-        var req = ValidRequest();
-        req.SearchField = (SearchFieldType)999;
-        var result = await _validator.ValidateAsync(req);
-        Assert.False(result.IsValid);
-        Assert.Contains(result.Errors, e => e.PropertyName == nameof(SearchLessonRequest.SearchField));
     }
 
     [Fact]

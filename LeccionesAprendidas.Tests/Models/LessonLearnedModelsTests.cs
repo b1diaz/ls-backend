@@ -5,7 +5,7 @@ namespace LeccionesAprendidas.Tests.Models;
 public class LessonLearnedModelsTests
 {
     [Fact]
-    public void SearchContent_ContainsAllFields()
+    public void SearchContent_ContainsContentFields()
     {
         var lesson = new LessonLearned
         {
@@ -13,20 +13,23 @@ public class LessonLearnedModelsTests
             SituationType = "Near Miss",
             Location = "Planta A",
             RelatedPosition = "Operador",
-            Analysis = "Análisis",
+            Analysis = "Analisis",
             Consequences = "Consecuencias",
-            Lesson = "Lección"
+            Lesson = "Leccion"
         };
 
         var content = lesson.SearchContent;
 
+        // SearchContent incluye los campos de contenido principal
         Assert.Contains("Desc", content);
-        Assert.Contains("Near Miss", content);
-        Assert.Contains("Planta A", content);
-        Assert.Contains("Operador", content);
-        Assert.Contains("Análisis", content);
+        Assert.Contains("Analisis", content);
         Assert.Contains("Consecuencias", content);
-        Assert.Contains("Lección", content);
+        Assert.Contains("Leccion", content);
+
+        // SituationType, Location y RelatedPosition ya no forman parte de searchContent
+        Assert.DoesNotContain("Near Miss", content);
+        Assert.DoesNotContain("Planta A", content);
+        Assert.DoesNotContain("Operador", content);
     }
 
     [Fact]

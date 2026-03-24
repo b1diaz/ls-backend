@@ -11,18 +11,21 @@ namespace LeccionesAprendidas.Services;
 public class SearchService : ISearchService
 {
     private readonly SearchIndexClient _adminClient;
+    private readonly SearchIndexerClient _indexerClient;
     private readonly SearchClient _searchClient;
+    private readonly AzureSearchOptions _config;
     private readonly string _indexName;
 
     public SearchService(IOptions<AzureSearchOptions> options)
     {
-        var config = options.Value;
+        _config = options.Value;
 
-        var endpoint = new Uri(config.Endpoint ?? throw new ArgumentNullException(nameof(config.Endpoint)));
-        var credential = new AzureKeyCredential(config.AdminKey ?? throw new ArgumentNullException(nameof(config.AdminKey)));
+        var endpoint = new Uri(_config.Endpoint ?? throw new ArgumentNullException(nameof(_config.Endpoint)));
+        var credential = new AzureKeyCredential(_config.AdminKey ?? throw new ArgumentNullException(nameof(_config.AdminKey)));
 
-        _indexName = config.IndexName ?? throw new ArgumentNullException(nameof(config.IndexName));
+        _indexName = _config.IndexName ?? throw new ArgumentNullException(nameof(_config.IndexName));
         _adminClient = new SearchIndexClient(endpoint, credential);
+        _indexerClient = new SearchIndexerClient(endpoint, credential);
         _searchClient = new SearchClient(endpoint, _indexName, credential);
     }
 
@@ -45,7 +48,7 @@ public class SearchService : ISearchService
                 },
                 new SearchableField("description")
                 {
-                    AnalyzerName = LexicalAnalyzerName.EnLucene
+                    AnalyzerName = LexicalAnalyzerName.EsLucene
                 },
                 new SearchableField("situationType")
                 {
@@ -63,49 +66,48 @@ public class SearchService : ISearchService
                 },
                 new SearchableField("analysis")
                 {
-                    AnalyzerName = LexicalAnalyzerName.EnLucene
+                    AnalyzerName = LexicalAnalyzerName.EsLucene
                 },
                 new SearchableField("consequences")
                 {
-                    AnalyzerName = LexicalAnalyzerName.EnLucene
+                    AnalyzerName = LexicalAnalyzerName.EsLucene
                 },
                 new SearchableField("lesson")
                 {
-                    AnalyzerName = LexicalAnalyzerName.EnLucene
+                    AnalyzerName = LexicalAnalyzerName.EsLucene
                 },
                 new SearchableField("searchContent")
                 {
-                    AnalyzerName = LexicalAnalyzerName.EnLucene
+                    AnalyzerName = LexicalAnalyzerName.EsLucene
                 },
                 new SimpleField("dateTime", SearchFieldDataType.DateTimeOffset)
                 {
                     IsFilterable = true,
                     IsSortable = true
                 },
-                new SearchField("descriptionEmbedding", SearchFieldDataType.Collection(SearchFieldDataType.Single))
+                // Frases clave extraidas por el skillset de Azure AI Search
+                new SearchField("keyPhrases", SearchFieldDataType.Collection(SearchFieldDataType.String))
                 {
                     IsSearchable = true,
-                    VectorSearchDimensions = 3072,
-                    VectorSearchProfileName = "vector-profile-1"
+                    IsFilterable = true
                 },
-                new SearchField("analysisEmbedding", SearchFieldDataType.Collection(SearchFieldDataType.Single))
+                // Texto para autocompletado, generado por el custom skill de Azure AI Search
+                new SearchableField("suggestDisplay")
                 {
-                    IsSearchable = true,
-                    VectorSearchDimensions = 3072,
-                    VectorSearchProfileName = "vector-profile-1"
+                    IsFilterable = false,
+                    IsSortable = false
                 },
-                new SearchField("consequencesEmbedding", SearchFieldDataType.Collection(SearchFieldDataType.Single))
-                {
-                    IsSearchable = true,
-                    VectorSearchDimensions = 3072,
-                    VectorSearchProfileName = "vector-profile-1"
-                },
-                new SearchField("lessonEmbedding", SearchFieldDataType.Collection(SearchFieldDataType.Single))
+                // Embedding unificado de searchContent para busqueda vectorial
+                new SearchField("searchContentEmbedding", SearchFieldDataType.Collection(SearchFieldDataType.Single))
                 {
                     IsSearchable = true,
                     VectorSearchDimensions = 3072,
                     VectorSearchProfileName = "vector-profile-1"
                 }
+            },
+            Suggesters =
+            {
+                new SearchSuggester("suggester-1", new[] { "suggestDisplay" })
             },
             VectorSearch = new VectorSearch
             {
@@ -136,8 +138,8 @@ public class SearchService : ISearchService
         {
             var existingIndex = await _adminClient.GetIndexAsync(_indexName);
             
-            // Verificar si el índice tiene la estructura correcta (debe tener los campos de embedding nuevos)
-            var requiredFields = new[] { "descriptionEmbedding", "analysisEmbedding", "consequencesEmbedding", "lessonEmbedding" };
+            // Verificar si el índice tiene la estructura correcta
+            var requiredFields = new[] { "searchContentEmbedding", "keyPhrases", "suggestDisplay" };
             var existingFieldNames = existingIndex.Value.Fields.Select(f => f.Name).ToHashSet();
             
             bool hasRequiredFields = requiredFields.All(field => existingFieldNames.Contains(field));
@@ -161,12 +163,12 @@ public class SearchService : ISearchService
             }
             catch (Exception createEx)
             {
-                return Result.Failure($"Error al crear el índice: {createEx.Message}");
+                return Result.Failure($"Error creating index: {createEx.Message}");
             }
         }
         catch (Exception ex)
         {
-            return Result.Failure($"Error al verificar el índice: {ex.Message}");
+            return Result.Failure($"Error verifying index: {ex.Message}");
         }
     }
 
@@ -189,11 +191,92 @@ public class SearchService : ISearchService
             // Crear el índice con la nueva estructura
             var index = CreateIndexDefinition();
             await _adminClient.CreateIndexAsync(index);
+
+            // Create/update indexer pipeline (data source, skillset, indexer)
+            var pipelineResult = await CreateOrUpdateIndexerPipelineAsync();
+            if (pipelineResult.IsError)
+                return Result.Failure($"Index recreated but pipeline failed: {pipelineResult.Error}");
+
             return Result.Success();
         }
         catch (Exception ex)
         {
-            return Result.Failure($"Error al recrear el índice: {ex.Message}");
+            return Result.Failure($"Error recreating index: {ex.Message}");
+        }
+    }
+
+    public async Task<Result> CreateOrUpdateIndexerPipelineAsync()
+    {
+        try
+        {
+            // 1. Data source → Cosmos DB
+            var dataSource = new SearchIndexerDataSourceConnection(
+                _config.DataSourceName,
+                SearchIndexerDataSourceType.CosmosDb,
+                _config.CosmosDbConnectionString,
+                new SearchIndexerDataContainer("Lecciones"));
+
+            await _indexerClient.CreateOrUpdateDataSourceConnectionAsync(dataSource);
+
+            // 2. Skillset → KeyPhraseExtraction + custom WebApiSkill (FormatearSuggest)
+            var keyPhraseSkill = new KeyPhraseExtractionSkill(
+                inputs: new[]
+                {
+                    new InputFieldMappingEntry("text") { Source = "/document/searchContent" }
+                },
+                outputs: new[]
+                {
+                    new OutputFieldMappingEntry("keyPhrases") { TargetName = "key_phrases" }
+                })
+            {
+                DefaultLanguageCode = KeyPhraseExtractionSkillLanguage.Es,
+                Context = "/document"
+            };
+
+            var webApiSkill = new WebApiSkill(
+                inputs: new[]
+                {
+                    new InputFieldMappingEntry("situationType") { Source = "/document/situationType" },
+                    new InputFieldMappingEntry("location") { Source = "/document/location" },
+                    new InputFieldMappingEntry("code") { Source = "/document/code" },
+                    new InputFieldMappingEntry("keyPhrases") { Source = "/document/key_phrases" }
+                },
+                outputs: new[]
+                {
+                    new OutputFieldMappingEntry("suggestDisplay") { TargetName = "suggestDisplay" }
+                },
+                uri: _config.FormatearSuggestUrl)
+            {
+                Context = "/document",
+                BatchSize = 1,
+                DegreeOfParallelism = 1
+            };
+
+            var skillset = new SearchIndexerSkillset(_config.SkillsetName, new SearchIndexerSkill[] { keyPhraseSkill, webApiSkill })
+            {
+                CognitiveServicesAccount = new CognitiveServicesAccountKey(_config.CognitiveServicesKey)
+            };
+
+            await _indexerClient.CreateOrUpdateSkillsetAsync(skillset);
+
+            // 3. Indexer → links data source + index + skillset
+            var indexer = new SearchIndexer(_config.IndexerName, _config.DataSourceName, _indexName)
+            {
+                SkillsetName = _config.SkillsetName,
+                OutputFieldMappings =
+                {
+                    new FieldMapping("/document/key_phrases") { TargetFieldName = "keyPhrases" },
+                    new FieldMapping("/document/suggestDisplay") { TargetFieldName = "suggestDisplay" }
+                }
+            };
+
+            await _indexerClient.CreateOrUpdateIndexerAsync(indexer);
+
+            return Result.Success();
+        }
+        catch (Exception ex)
+        {
+            return Result.Failure($"Error configuring indexer pipeline: {ex.Message}");
         }
     }
 
@@ -221,7 +304,7 @@ public class SearchService : ISearchService
             }
             catch (Exception ex)
             {
-                return Result<(int, int)>.Failure($"Error al procesar lote {i / batchSize + 1}: {ex.Message}");
+                return Result<(int, int)>.Failure($"Error processing batch {i / batchSize + 1}: {ex.Message}");
             }
         }
 
@@ -241,22 +324,21 @@ public class SearchService : ISearchService
             {
                 var errorMsg = string.Join(" | ", failures.Select(f =>
                     $"Id: {f.Key}, Error: {f.ErrorMessage}"));
-                return Result.Failure($"Fallo al indexar uno o más documentos: {errorMsg}");
+                return Result.Failure($"Failed to index one or more documents: {errorMsg}");
             }
 
             return Result.Success();
         }
         catch (Exception ex)
         {
-            return Result.Failure($"Excepción al indexar documento: {ex.Message}");
+            return Result.Failure($"Exception indexing document: {ex.Message}");
         }
     }
 
 
     public async Task<Result<PaginatedSearchResult>> SearchLessonsAsync(
-        string queryText, 
-        float[] queryEmbedding, 
-        SearchFieldType searchField,
+        string queryText,
+        float[] queryEmbedding,
         DateTime? dateFrom = null,
         DateTime? dateTo = null,
         double? minScore = null,
@@ -265,15 +347,6 @@ public class SearchService : ISearchService
     {
         try
         {
-            // Determinar el campo de embedding según el tipo de búsqueda
-            string embeddingField = searchField switch
-            {
-                SearchFieldType.Description => "descriptionEmbedding",
-                SearchFieldType.Analysis => "analysisEmbedding",
-                SearchFieldType.Consequences => "consequencesEmbedding",
-                SearchFieldType.Lesson => "lessonEmbedding",
-                _ => throw new ArgumentException($"Campo de búsqueda no válido: {searchField}")
-            };
 
             // Validar y ajustar parámetros de paginación
             var validPageSizes = new[] { 10, 25, 50, 100 };
@@ -289,7 +362,7 @@ public class SearchService : ISearchService
                 Size = take,
                 Skip = skip,
                 IncludeTotalCount = true,
-                Select = { "id", "code", "description", "lesson", "situationType", "location", "relatedPosition", "analysis", "consequences", "dateTime", "searchContent" }
+                Select = { "id", "code", "description", "lesson", "situationType", "location", "relatedPosition", "analysis", "consequences", "dateTime", "searchContent", "keyPhrases", "suggestDisplay" }
             };
 
             // Construir filtro OData para fechas
@@ -318,14 +391,14 @@ public class SearchService : ISearchService
                 options.Filter = string.Join(" and ", filters);
             }
 
-            // Configurar búsqueda vectorial
+            // Configurar búsqueda vectorial siempre sobre searchContentEmbedding
             options.VectorSearch ??= new VectorSearchOptions();
 
             // KNearestNeighborsCount debe cubrir todos los candidatos necesarios antes de aplicar Skip+Size
             options.VectorSearch.Queries.Add(new VectorizedQuery(queryEmbedding)
             {
                 KNearestNeighborsCount = skip + take,
-                Fields = { embeddingField }
+                Fields = { "searchContentEmbedding" }
             });
 
             var response = await _searchClient.SearchAsync<LessonLearned>(queryText, options);
@@ -362,7 +435,49 @@ public class SearchService : ISearchService
         }
         catch (Exception ex)
         {
-            return Result<PaginatedSearchResult>.Failure($"Error al buscar lecciones: {ex.Message}");
+            return Result<PaginatedSearchResult>.Failure($"Error searching lessons: {ex.Message}");
+        }
+    }
+
+    public async Task<Result> TriggerIndexerAsync()
+    {
+        try
+        {
+            // Ejecutar sin reset: el indexer usa change tracking y procesa solo documentos nuevos
+            await _indexerClient.RunIndexerAsync(_config.IndexerName);
+            return Result.Success();
+        }
+        catch (RequestFailedException ex) when (ex.Status == 409)
+        {
+            // El indexer ya esta corriendo, no es un error
+            return Result.Success();
+        }
+        catch (Exception ex)
+        {
+            return Result.Failure($"Error triggering indexer: {ex.Message}");
+        }
+    }
+
+    public async Task<Result<List<string>>> SuggestLessonsAsync(string queryText, int size = 5)
+    {
+        try
+        {
+            var options = new SuggestOptions
+            {
+                Size = size,
+                UseFuzzyMatching = true
+            };
+
+            var response = await _searchClient.SuggestAsync<LessonLearned>(queryText, "suggester-1", options);
+            var suggestions = response.Value.Results
+                .Select(r => r.Text)
+                .ToList();
+
+            return Result<List<string>>.Success(suggestions);
+        }
+        catch (Exception ex)
+        {
+            return Result<List<string>>.Failure($"Error fetching suggestions: {ex.Message}");
         }
     }
 

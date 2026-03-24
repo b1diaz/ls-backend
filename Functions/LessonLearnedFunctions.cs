@@ -44,29 +44,13 @@ public class LessonLearnedFunctions
         var request = JsonSerializer.Deserialize<CreateLessonRequest>(body, JsonOptions);
 
         if (request is null)
-            return await CreateErrorResponse(req, HttpStatusCode.BadRequest, "Cuerpo de solicitud inválido.");
+            return await CreateErrorResponse(req, HttpStatusCode.BadRequest, "Invalid request body.");
 
         var validation = await _createValidator.ValidateAsync(request);
         if (!validation.IsValid)
             return await CreateErrorResponse(req, HttpStatusCode.BadRequest, string.Join(" | ", validation.Errors.Select(e => e.ErrorMessage)));
 
-        // Generar embeddings para cada campo específico
-        var descriptionEmbeddingResult = await _openAIService.GenerateEmbeddingAsync(request.Description);
-        if (descriptionEmbeddingResult.IsError)
-            return await CreateErrorResponse(req, HttpStatusCode.InternalServerError, descriptionEmbeddingResult.Error ?? "Error desconocido al generar el embedding de descripción.");
-
-        var analysisEmbeddingResult = await _openAIService.GenerateEmbeddingAsync(request.Analysis);
-        if (analysisEmbeddingResult.IsError)
-            return await CreateErrorResponse(req, HttpStatusCode.InternalServerError, analysisEmbeddingResult.Error ?? "Error desconocido al generar el embedding de análisis.");
-
-        var consequencesEmbeddingResult = await _openAIService.GenerateEmbeddingAsync(request.Consequences);
-        if (consequencesEmbeddingResult.IsError)
-            return await CreateErrorResponse(req, HttpStatusCode.InternalServerError, consequencesEmbeddingResult.Error ?? "Error desconocido al generar el embedding de consecuencias.");
-
-        var lessonEmbeddingResult = await _openAIService.GenerateEmbeddingAsync(request.LessonLearned);
-        if (lessonEmbeddingResult.IsError)
-            return await CreateErrorResponse(req, HttpStatusCode.InternalServerError, lessonEmbeddingResult.Error ?? "Error desconocido al generar el embedding de aprendizaje.");
-
+        // Construir la lección para poder usar su SearchContent (propiedad calculada)
         var lesson = new LessonLearned
         {
             Code = request.Code,
@@ -77,20 +61,26 @@ public class LessonLearnedFunctions
             Analysis = request.Analysis,
             Consequences = request.Consequences,
             Lesson = request.LessonLearned,
-            DateTime = request.DateTime,
-            DescriptionEmbedding = descriptionEmbeddingResult.Value!,
-            AnalysisEmbedding = analysisEmbeddingResult.Value!,
-            ConsequencesEmbedding = consequencesEmbeddingResult.Value!,
-            LessonEmbedding = lessonEmbeddingResult.Value!
+            DateTime = request.DateTime
         };
+
+        // Generar un único embedding sobre searchContent
+        var searchContentEmbeddingResult = await _openAIService.GenerateEmbeddingAsync(lesson.SearchContent);
+        if (searchContentEmbeddingResult.IsError)
+            return await CreateErrorResponse(req, HttpStatusCode.InternalServerError, searchContentEmbeddingResult.Error ?? "Unknown error generating content embedding.");
+
+        lesson.SearchContentEmbedding = searchContentEmbeddingResult.Value!;
 
         var saveResult = await _cosmosDbService.CreateLessonAsync(lesson);
         if (saveResult.IsError)
-            return await CreateErrorResponse(req, HttpStatusCode.InternalServerError, saveResult.Error ?? "Error desconocido al crear leccion.");
+            return await CreateErrorResponse(req, HttpStatusCode.InternalServerError, saveResult.Error ?? "Unknown error saving lesson.");
 
         var indexResult = await _searchService.IndexLessonAsync(lesson);
         if (indexResult.IsError)
-            return await CreateErrorResponse(req, HttpStatusCode.InternalServerError, indexResult.Error ?? "Error desconocido al crear crear indice.");
+            return await CreateErrorResponse(req, HttpStatusCode.InternalServerError, indexResult.Error ?? "Unknown error indexing lesson.");
+
+        // Disparar el indexer para que el skillset enriquezca el nuevo documento (change tracking, no reindexado completo)
+        await _searchService.TriggerIndexerAsync();
 
         var response = req.CreateResponse(HttpStatusCode.OK);
         await response.WriteAsJsonAsync(saveResult.Value, HttpStatusCode.Created);
@@ -105,7 +95,7 @@ public class LessonLearnedFunctions
         var request = JsonSerializer.Deserialize<SearchLessonRequest>(body, JsonOptions);
 
         if (request is null)
-            return await CreateErrorResponse(req, HttpStatusCode.BadRequest, "Cuerpo de solicitud inválido.");
+            return await CreateErrorResponse(req, HttpStatusCode.BadRequest, "Invalid request body.");
 
         var validation = await _searchValidator.ValidateAsync(request);
         if (!validation.IsValid)
@@ -113,20 +103,19 @@ public class LessonLearnedFunctions
 
         var embeddingResult = await _openAIService.GenerateEmbeddingAsync(request.Query);
         if (embeddingResult.IsError)
-            return await CreateErrorResponse(req, HttpStatusCode.InternalServerError, embeddingResult.Error ?? "Error desconocido al generar el embedding.");
+            return await CreateErrorResponse(req, HttpStatusCode.InternalServerError, embeddingResult.Error ?? "Unknown error generating embedding.");
 
         var searchResult = await _searchService.SearchLessonsAsync(
-            request.Query, 
+            request.Query,
             embeddingResult.Value!,
-            request.SearchField,
             request.DateFrom,
             request.DateTo,
             request.MinScore,
             request.PageNumber,
             request.PageSize);
-        
+
         if (searchResult.IsError)
-            return await CreateErrorResponse(req, HttpStatusCode.InternalServerError, searchResult.Error ?? "Error desconocido al buscar leccion.");
+            return await CreateErrorResponse(req, HttpStatusCode.InternalServerError, searchResult.Error ?? "Unknown error searching lessons.");
 
         var response = req.CreateResponse(HttpStatusCode.OK);
         await response.WriteAsJsonAsync(searchResult.Value);
@@ -139,7 +128,7 @@ public class LessonLearnedFunctions
     {
         var lessonsResult = await _cosmosDbService.GetLessonsAsync();
         if (lessonsResult.IsError)
-            return await CreateErrorResponse(req, HttpStatusCode.InternalServerError, lessonsResult.Error ?? "Error al obtener lecciones de CosmosDB.");
+            return await CreateErrorResponse(req, HttpStatusCode.InternalServerError, lessonsResult.Error ?? "Error fetching lessons from Cosmos DB.");
 
         var lessons = lessonsResult.Value!;
 
@@ -152,7 +141,7 @@ public class LessonLearnedFunctions
 
         var indexResult = await _searchService.IndexLessonsAsync(lessons);
         if (indexResult.IsError)
-            return await CreateErrorResponse(req, HttpStatusCode.InternalServerError, indexResult.Error ?? "Error al reindexar lecciones.");
+            return await CreateErrorResponse(req, HttpStatusCode.InternalServerError, indexResult.Error ?? "Error reindexing lessons.");
 
         var (reindexed, failed) = indexResult.Value;
 
@@ -166,12 +155,66 @@ public class LessonLearnedFunctions
         [HttpTrigger(AuthorizationLevel.Function, "post")] HttpRequestData req)
     {
         var result = await _searchService.RecreateIndexAsync();
-        
+
         if (result.IsError)
-            return await CreateErrorResponse(req, HttpStatusCode.InternalServerError, result.Error ?? "Error desconocido al recrear el índice.");
+            return await CreateErrorResponse(req, HttpStatusCode.InternalServerError, result.Error ?? "Unknown error recreating index.");
 
         var response = req.CreateResponse(HttpStatusCode.OK);
-        await response.WriteStringAsync("Índice recreado exitosamente.");
+        await response.WriteStringAsync("Index recreated successfully.");
+        return response;
+    }
+
+    [Function("SuggestLessons")]
+    public async Task<HttpResponseData> SuggestLessonsAsync(
+        [HttpTrigger(AuthorizationLevel.Function, "post")] HttpRequestData req)
+    {
+        var body = await new StreamReader(req.Body).ReadToEndAsync();
+        var request = JsonSerializer.Deserialize<SuggestLessonRequest>(body, JsonOptions);
+
+        if (request is null || string.IsNullOrWhiteSpace(request.Query))
+            return await CreateErrorResponse(req, HttpStatusCode.BadRequest, "Query is required.");
+
+        var suggestResult = await _searchService.SuggestLessonsAsync(request.Query, request.Size);
+        if (suggestResult.IsError)
+            return await CreateErrorResponse(req, HttpStatusCode.InternalServerError, suggestResult.Error ?? "Unknown error fetching suggestions.");
+
+        var response = req.CreateResponse(HttpStatusCode.OK);
+        await response.WriteAsJsonAsync(suggestResult.Value);
+        return response;
+    }
+
+    /// <summary>
+    /// Endpoint llamado por el custom skill de Azure AI Search para generar el campo suggestDisplay.
+    /// Formatea un texto único de autocompletado a partir de situación, ubicación, código y frases clave.
+    /// </summary>
+    [Function("FormatearSuggest")]
+    public async Task<HttpResponseData> FormatearSuggestAsync(
+        [HttpTrigger(AuthorizationLevel.Function, "post")] HttpRequestData req)
+    {
+        var body = await new StreamReader(req.Body).ReadToEndAsync();
+        var request = JsonSerializer.Deserialize<FormatearSuggestRequest>(body, JsonOptions);
+
+        if (request is null || request.Values.Count == 0)
+            return await CreateErrorResponse(req, HttpStatusCode.BadRequest, "Invalid request body.");
+
+        var outputRecords = request.Values.Select(record =>
+        {
+            var d = record.Data;
+            var phrases = d.Phrases.Count > 0 ? string.Join(", ", d.Phrases) : string.Empty;
+            var finalText = string.IsNullOrWhiteSpace(phrases)
+                ? $"[{d.Code}] {d.SituationType} - {d.Location}"
+                : $"[{d.Code}] {d.SituationType} - {d.Location} | {phrases}";
+
+            return new FormatearSuggestOutputRecord
+            {
+                RecordId = record.RecordId,
+                Data = new FormatearSuggestOutputData { SuggestDisplay = finalText }
+            };
+        }).ToList();
+
+        var responsePayload = new FormatearSuggestResponse { Values = outputRecords };
+        var response = req.CreateResponse(HttpStatusCode.OK);
+        await response.WriteAsJsonAsync(responsePayload);
         return response;
     }
 

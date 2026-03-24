@@ -11,10 +11,12 @@ public interface ISearchService
     Task<Result<PaginatedSearchResult>> SearchLessonsAsync(
         string queryText,
         float[] queryEmbedding,
-        SearchFieldType searchField,
         DateTime? dateFrom,
         DateTime? dateTo,
         double? minScore,
         int pageNumber,
         int pageSize);
+    Task<Result<List<string>>> SuggestLessonsAsync(string queryText, int size = 5);
+    Task<Result> CreateOrUpdateIndexerPipelineAsync();
+    Task<Result> TriggerIndexerAsync();
 }

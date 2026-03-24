@@ -3,12 +3,12 @@ namespace LeccionesAprendidas.Models;
 public class CreateLessonRequest
 {
     /// <summary>
-    /// Código o número único del evento.
+    /// CÃ³digo o nÃºmero Ãºnico del evento.
     /// </summary>
     public string Code { get; set; } = string.Empty;
 
     /// <summary>
-    /// Fecha y hora en que ocurrió o fue detectado el evento.
+    /// Fecha y hora en que ocurriÃ³ o fue detectado el evento.
     /// </summary>
     public DateTime DateTime { get; set; }
 
@@ -18,22 +18,22 @@ public class CreateLessonRequest
     public string RelatedPosition { get; set; } = string.Empty;
 
     /// <summary>
-    /// Ubicación del evento: proyecto, área o sitio y lugar específico.
+    /// UbicaciÃ³n del evento: proyecto, Ã¡rea o sitio y lugar especÃ­fico.
     /// </summary>
     public string Location { get; set; } = string.Empty;
 
     /// <summary>
-    /// Tipo de situación observada (Near Miss, Incidente, Acto Inseguro, etc.).
+    /// Tipo de situaciÃ³n observada (Near Miss, Incidente, Acto Inseguro, etc.).
     /// </summary>
     public string SituationType { get; set; } = string.Empty;
 
     /// <summary>
-    /// Descripción detallada de lo ocurrido: qué pasó, en qué contexto y cómo se presentó.
+    /// DescripciÃ³n detallada de lo ocurrido: quÃ© pasÃ³, en quÃ© contexto y cÃ³mo se presentÃ³.
     /// </summary>
     public string Description { get; set; } = string.Empty;
 
     /// <summary>
-    /// Análisis de causas del evento: origen, factores contribuyentes, etc.
+    /// AnÃ¡lisis de causas del evento: origen, factores contribuyentes, etc.
     /// </summary>
     public string Analysis { get; set; } = string.Empty;
 
@@ -48,9 +48,9 @@ public class CreateLessonRequest
     public string LessonLearned { get; set; } = string.Empty;
 
     /// <summary>
-    /// Campo combinado con todo el contenido textual para búsqueda semántica o con IA.
+    /// Campo combinado con los campos de contenido principal, usado para bÃºsqueda semÃ¡ntica.
     /// </summary>
-    public string SearchContent => $"{RelatedPosition}. {Location}. {SituationType}. {Description}. {Analysis}. {Consequences}. {LessonLearned}";
+    public string SearchContent => $"{Consequences}. {Description}. {Analysis}. {LessonLearned}";
 }
 
 public class SearchLessonRequest
@@ -60,12 +60,6 @@ public class SearchLessonRequest
     /// Puede incluir palabras clave, descripciones o cualquier dato relevante.
     /// </summary>
     public string Query { get; set; } = string.Empty;
-
-    /// <summary>
-    /// Campo específico donde se realizará la búsqueda semántica.
-    /// Es excluyente, solo se puede seleccionar uno.
-    /// </summary>
-    public SearchFieldType SearchField { get; set; }
 
     /// <summary>
     /// Fecha desde la cual filtrar las lecciones aprendidas (opcional).
@@ -78,18 +72,70 @@ public class SearchLessonRequest
     public DateTime? DateTo { get; set; }
 
     /// <summary>
-    /// Score mínimo requerido para que una lección aprendida sea retornada (0 a 1).
-    /// Si el score está por debajo de este valor, no se retorna.
+    /// Score mÃ­nimo requerido para que una lecciÃ³n aprendida sea retornada (0 a 1).
+    /// Si el score estÃ¡ por debajo de este valor, no se retorna.
     /// </summary>
     public double? MinScore { get; set; }
 
     /// <summary>
-    /// Número de página a retornar (base 1). Por defecto es 1.
+    /// NÃºmero de pÃ¡gina a retornar (base 1). Por defecto es 1.
     /// </summary>
     public int PageNumber { get; set; } = 1;
 
     /// <summary>
-    /// Cantidad de resultados por página. Valores permitidos: 10, 25, 50, 100. Por defecto es 10.
+    /// Cantidad de resultados por pÃ¡gina. Valores permitidos: 10, 25, 50, 100. Por defecto es 10.
     /// </summary>
     public int PageSize { get; set; } = 10;
+}
+
+public class SuggestLessonRequest
+{
+    /// <summary>
+    /// Texto parcial escrito por el usuario para obtener sugerencias de autocompletado.
+    /// </summary>
+    public string Query { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Cantidad mÃ¡xima de sugerencias a retornar. Por defecto es 5.
+    /// </summary>
+    public int Size { get; set; } = 5;
+}
+
+// â”€â”€â”€ Modelos para el custom skill de Azure AI Search (FormatearSuggest) â”€â”€â”€â”€â”€â”€â”€
+
+public class FormatearSuggestRequest
+{
+    public List<FormatearSuggestRecord> Values { get; set; } = [];
+}
+
+public class FormatearSuggestRecord
+{
+    public string RecordId { get; set; } = string.Empty;
+    public FormatearSuggestInputData Data { get; set; } = new();
+}
+
+public class FormatearSuggestInputData
+{
+    public string SituationType { get; set; } = string.Empty;
+    public string Location { get; set; } = string.Empty;
+    public string Code { get; set; } = string.Empty;
+    public List<string> Phrases { get; set; } = [];
+}
+
+public class FormatearSuggestResponse
+{
+    public List<FormatearSuggestOutputRecord> Values { get; set; } = [];
+}
+
+public class FormatearSuggestOutputRecord
+{
+    public string RecordId { get; set; } = string.Empty;
+    public FormatearSuggestOutputData Data { get; set; } = new();
+    public List<string> Errors { get; set; } = [];
+    public List<string> Warnings { get; set; } = [];
+}
+
+public class FormatearSuggestOutputData
+{
+    public string SuggestDisplay { get; set; } = string.Empty;
 }

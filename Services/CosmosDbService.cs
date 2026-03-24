@@ -34,7 +34,7 @@ public class CosmosDbService : ICosmosDbService
         }
         catch (Exception ex)
         {
-            return Result<LessonLearned>.Failure($"Error inesperado al guardar la lecci�n: {ex.Message}");
+            return Result<LessonLearned>.Failure($"Unexpected error saving lesson: {ex.Message}");
         }
     }
 
@@ -53,4 +53,3 @@ public class CosmosDbService : ICosmosDbService
         return Result<List<LessonLearned>>.Success(results);
     }
 }
-

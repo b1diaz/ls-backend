@@ -68,35 +68,32 @@ public class LessonLearned
     public DateTime DateTime { get; set; }
 
     /// <summary>
-    /// Texto combinado con todos los campos relevantes, usado para busquedas semanticas o con IA.
+    /// Texto combinado con los campos de contenido principal, usado para busqueda semantica e indexacion.
+    /// Las frases clave (keyPhrases) son extraidas por el skillset de Azure AI Search a partir de este campo.
     /// </summary>
     [JsonPropertyName("searchContent")]
     public string SearchContent =>
-        $"{Description}. {SituationType}. {Location}. {RelatedPosition}. {Analysis}. {Consequences}. {Lesson}.";
+        $"{Consequences}. {Description}. {Analysis}. {Lesson}.";
 
     /// <summary>
-    /// Representacion numerica de la descripcion (embedding) para comparacion semantica mediante IA.
+    /// Frases clave extraidas por el skillset de Azure AI Search a partir de searchContent.
+    /// No se asignan desde el backend; son pobladas por el indexador de Azure Search.
     /// </summary>
-    [JsonPropertyName("descriptionEmbedding")]
-    public float[] DescriptionEmbedding { get; set; } = [];
+    [JsonPropertyName("keyPhrases")]
+    public List<string> KeyPhrases { get; set; } = [];
 
     /// <summary>
-    /// Representacion numerica del analisis (embedding) para comparacion semantica mediante IA.
+    /// Texto formateado para el autocompletado (Suggester), generado por el custom skill de Azure AI Search.
+    /// No se asigna desde el backend; es poblado por el indexador de Azure Search.
     /// </summary>
-    [JsonPropertyName("analysisEmbedding")]
-    public float[] AnalysisEmbedding { get; set; } = [];
+    [JsonPropertyName("suggestDisplay")]
+    public string SuggestDisplay { get; set; } = string.Empty;
 
     /// <summary>
-    /// Representacion numerica de las consecuencias (embedding) para comparacion semantica mediante IA.
+    /// Representacion numerica de searchContent (embedding) para comparacion semantica mediante IA.
     /// </summary>
-    [JsonPropertyName("consequencesEmbedding")]
-    public float[] ConsequencesEmbedding { get; set; } = [];
-
-    /// <summary>
-    /// Representacion numerica del aprendizaje (embedding) para comparacion semantica mediante IA.
-    /// </summary>
-    [JsonPropertyName("lessonEmbedding")]
-    public float[] LessonEmbedding { get; set; } = [];
+    [JsonPropertyName("searchContentEmbedding")]
+    public float[] SearchContentEmbedding { get; set; } = [];
 }
 
 public class SearchResult
