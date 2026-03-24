@@ -36,10 +36,6 @@ public class LessonLearnedFunctions
         PropertyNamingPolicy = null
     };
 
-    private static readonly JsonSerializerOptions CamelCaseOptions = new JsonSerializerOptions
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-    };
 
     [Function("RegisterLesson")]
     public async Task<HttpResponseData> RegisterLessonAsync(
@@ -69,12 +65,20 @@ public class LessonLearnedFunctions
             DateTime = request.DateTime
         };
 
-        // Generar un único embedding sobre searchContent
-        var searchContentEmbeddingResult = await _openAIService.GenerateEmbeddingAsync(lesson.SearchContent);
-        if (searchContentEmbeddingResult.IsError)
-            return await CreateErrorResponse(req, HttpStatusCode.InternalServerError, searchContentEmbeddingResult.Error ?? "Unknown error generating content embedding.");
+        var embeddingTask = _openAIService.GenerateEmbeddingAsync(lesson.SearchContent);
+        var enrichmentTask = _openAIService.GenerateLessonEnrichmentAsync(lesson.SearchContent);
+        await Task.WhenAll(embeddingTask, enrichmentTask);
 
-        lesson.SearchContentEmbedding = searchContentEmbeddingResult.Value!;
+        var embeddingResult = await embeddingTask;
+        if (embeddingResult.IsError)
+            return await CreateErrorResponse(req, HttpStatusCode.InternalServerError, embeddingResult.Error ?? "Unknown error generating embedding.");
+
+        var enrichmentResult = await enrichmentTask;
+        if (enrichmentResult.IsError)
+            return await CreateErrorResponse(req, HttpStatusCode.InternalServerError, enrichmentResult.Error ?? "Unknown error generating lesson enrichment.");
+
+        lesson.SearchContentEmbedding = embeddingResult.Value!;
+        lesson.SuggestDisplay = enrichmentResult.Value!.SuggestDisplay;
 
         var saveResult = await _cosmosDbService.CreateLessonAsync(lesson);
         if (saveResult.IsError)
@@ -83,9 +87,6 @@ public class LessonLearnedFunctions
         var indexResult = await _searchService.IndexLessonAsync(lesson);
         if (indexResult.IsError)
             return await CreateErrorResponse(req, HttpStatusCode.InternalServerError, indexResult.Error ?? "Unknown error indexing lesson.");
-
-        // Disparar el indexer para que el skillset enriquezca el nuevo documento (change tracking, no reindexado completo)
-        await _searchService.TriggerIndexerAsync();
 
         var response = req.CreateResponse(HttpStatusCode.OK);
         await response.WriteAsJsonAsync(saveResult.Value, HttpStatusCode.Created);
@@ -185,42 +186,6 @@ public class LessonLearnedFunctions
 
         var response = req.CreateResponse(HttpStatusCode.OK);
         await response.WriteAsJsonAsync(suggestResult.Value);
-        return response;
-    }
-
-    /// <summary>
-    /// Endpoint llamado por el custom skill de Azure AI Search para generar el campo suggestDisplay.
-    /// Formatea un texto único de autocompletado a partir de situación, ubicación, código y frases clave.
-    /// </summary>
-    [Function("FormatearSuggest")]
-    public async Task<HttpResponseData> FormatearSuggestAsync(
-        [HttpTrigger(AuthorizationLevel.Function, "post")] HttpRequestData req)
-    {
-        var body = await new StreamReader(req.Body).ReadToEndAsync();
-        var request = JsonSerializer.Deserialize<FormatearSuggestRequest>(body, JsonOptions);
-
-        if (request is null || request.Values.Count == 0)
-            return await CreateErrorResponse(req, HttpStatusCode.BadRequest, "Invalid request body.");
-
-        var outputRecords = request.Values.Select(record =>
-        {
-            var d = record.Data;
-            var phrases = d.KeyPhrases.Count > 0 ? string.Join(", ", d.KeyPhrases) : string.Empty;
-            var finalText = string.IsNullOrWhiteSpace(phrases)
-                ? $"[{d.Code}] {d.SituationType} - {d.Location}"
-                : $"[{d.Code}] {d.SituationType} - {d.Location} | {phrases}";
-
-            return new FormatearSuggestOutputRecord
-            {
-                RecordId = record.RecordId,
-                Data = new FormatearSuggestOutputData { SuggestDisplay = finalText }
-            };
-        }).ToList();
-
-        var responsePayload = new FormatearSuggestResponse { Values = outputRecords };
-        var response = req.CreateResponse(HttpStatusCode.OK);
-        response.Headers.Add("Content-Type", "application/json");
-        await response.WriteStringAsync(JsonSerializer.Serialize(responsePayload, CamelCaseOptions));
         return response;
     }
 

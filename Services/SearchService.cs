@@ -11,7 +11,6 @@ namespace LeccionesAprendidas.Services;
 public class SearchService : ISearchService
 {
     private readonly SearchIndexClient _adminClient;
-    private readonly SearchIndexerClient _indexerClient;
     private readonly SearchClient _searchClient;
     private readonly AzureSearchOptions _config;
     private readonly string _indexName;
@@ -25,7 +24,6 @@ public class SearchService : ISearchService
 
         _indexName = _config.IndexName ?? throw new ArgumentNullException(nameof(_config.IndexName));
         _adminClient = new SearchIndexClient(endpoint, credential);
-        _indexerClient = new SearchIndexerClient(endpoint, credential);
         _searchClient = new SearchClient(endpoint, _indexName, credential);
     }
 
@@ -85,13 +83,6 @@ public class SearchService : ISearchService
                     IsFilterable = true,
                     IsSortable = true
                 },
-                // Frases clave extraidas por el skillset de Azure AI Search
-                new SearchField("keyPhrases", SearchFieldDataType.Collection(SearchFieldDataType.String))
-                {
-                    IsSearchable = true,
-                    IsFilterable = true
-                },
-                // Texto para autocompletado, generado por el custom skill de Azure AI Search
                 new SearchableField("suggestDisplay")
                 {
                     IsFilterable = false,
@@ -139,7 +130,7 @@ public class SearchService : ISearchService
             var existingIndex = await _adminClient.GetIndexAsync(_indexName);
             
             // Verificar si el índice tiene la estructura correcta
-            var requiredFields = new[] { "searchContentEmbedding", "keyPhrases", "suggestDisplay" };
+            var requiredFields = new[] { "searchContentEmbedding", "suggestDisplay" };
             var existingFieldNames = existingIndex.Value.Fields.Select(f => f.Name).ToHashSet();
             
             bool hasRequiredFields = requiredFields.All(field => existingFieldNames.Contains(field));
@@ -192,91 +183,11 @@ public class SearchService : ISearchService
             var index = CreateIndexDefinition();
             await _adminClient.CreateIndexAsync(index);
 
-            // Create/update indexer pipeline (data source, skillset, indexer)
-            var pipelineResult = await CreateOrUpdateIndexerPipelineAsync();
-            if (pipelineResult.IsError)
-                return Result.Failure($"Index recreated but pipeline failed: {pipelineResult.Error}");
-
             return Result.Success();
         }
         catch (Exception ex)
         {
             return Result.Failure($"Error recreating index: {ex.Message}");
-        }
-    }
-
-    public async Task<Result> CreateOrUpdateIndexerPipelineAsync()
-    {
-        try
-        {
-            // 1. Data source → Cosmos DB
-            var dataSource = new SearchIndexerDataSourceConnection(
-                _config.DataSourceName,
-                SearchIndexerDataSourceType.CosmosDb,
-                _config.CosmosDbConnectionString,
-                new SearchIndexerDataContainer("Lecciones"));
-
-            await _indexerClient.CreateOrUpdateDataSourceConnectionAsync(dataSource);
-
-            // 2. Skillset → KeyPhraseExtraction + custom WebApiSkill (FormatearSuggest)
-            var keyPhraseSkill = new KeyPhraseExtractionSkill(
-                inputs: new[]
-                {
-                    new InputFieldMappingEntry("text") { Source = "/document/searchContent" }
-                },
-                outputs: new[]
-                {
-                    new OutputFieldMappingEntry("keyPhrases") { TargetName = "key_phrases" }
-                })
-            {
-                DefaultLanguageCode = KeyPhraseExtractionSkillLanguage.Es,
-                Context = "/document"
-            };
-
-            var webApiSkill = new WebApiSkill(
-                inputs: new[]
-                {
-                    new InputFieldMappingEntry("situationType") { Source = "/document/situationType" },
-                    new InputFieldMappingEntry("location") { Source = "/document/location" },
-                    new InputFieldMappingEntry("code") { Source = "/document/code" },
-                    new InputFieldMappingEntry("keyPhrases") { Source = "/document/key_phrases" }
-                },
-                outputs: new[]
-                {
-                    new OutputFieldMappingEntry("suggestDisplay") { TargetName = "suggestDisplay_enriched" }
-                },
-                uri: _config.FormatearSuggestUrl)
-            {
-                Context = "/document",
-                BatchSize = 1,
-                DegreeOfParallelism = 1
-            };
-
-            var skillset = new SearchIndexerSkillset(_config.SkillsetName, new SearchIndexerSkill[] { keyPhraseSkill, webApiSkill })
-            {
-                CognitiveServicesAccount = new CognitiveServicesAccountKey(_config.CognitiveServicesKey)
-            };
-
-            await _indexerClient.CreateOrUpdateSkillsetAsync(skillset);
-
-            // 3. Indexer → links data source + index + skillset
-            var indexer = new SearchIndexer(_config.IndexerName, _config.DataSourceName, _indexName)
-            {
-                SkillsetName = _config.SkillsetName,
-                OutputFieldMappings =
-                {
-                    new FieldMapping("/document/key_phrases") { TargetFieldName = "keyPhrases" },
-                    new FieldMapping("/document/suggestDisplay_enriched") { TargetFieldName = "suggestDisplay" }
-                }
-            };
-
-            await _indexerClient.CreateOrUpdateIndexerAsync(indexer);
-
-            return Result.Success();
-        }
-        catch (Exception ex)
-        {
-            return Result.Failure($"Error configuring indexer pipeline: {ex.Message}");
         }
     }
 
@@ -293,6 +204,9 @@ public class SearchService : ISearchService
 
             try
             {
+                foreach (var lesson in batch)
+                    EnsureIndexableLesson(lesson);
+
                 var indexBatch = IndexDocumentsBatch.Upload(batch);
                 var response = await _searchClient.IndexDocumentsAsync(indexBatch);
 
@@ -315,6 +229,7 @@ public class SearchService : ISearchService
     {
         try
         {
+            EnsureIndexableLesson(lesson);
             var batch = IndexDocumentsBatch.Upload(new[] { lesson });
             var response = await _searchClient.IndexDocumentsAsync(batch);
 
@@ -362,7 +277,7 @@ public class SearchService : ISearchService
                 Size = take,
                 Skip = skip,
                 IncludeTotalCount = true,
-                Select = { "id", "code", "description", "lesson", "situationType", "location", "relatedPosition", "analysis", "consequences", "dateTime", "searchContent", "keyPhrases", "suggestDisplay" }
+                Select = { "id", "code", "description", "lesson", "situationType", "location", "relatedPosition", "analysis", "consequences", "dateTime", "searchContent", "suggestDisplay" }
             };
 
             // Construir filtro OData para fechas
@@ -439,23 +354,10 @@ public class SearchService : ISearchService
         }
     }
 
-    public async Task<Result> TriggerIndexerAsync()
+
+    private static void EnsureIndexableLesson(LessonLearned lesson)
     {
-        try
-        {
-            // Ejecutar sin reset: el indexer usa change tracking y procesa solo documentos nuevos
-            await _indexerClient.RunIndexerAsync(_config.IndexerName);
-            return Result.Success();
-        }
-        catch (RequestFailedException ex) when (ex.Status == 409)
-        {
-            // El indexer ya esta corriendo, no es un error
-            return Result.Success();
-        }
-        catch (Exception ex)
-        {
-            return Result.Failure($"Error triggering indexer: {ex.Message}");
-        }
+        lesson.SuggestDisplay ??= string.Empty;
     }
 
     public async Task<Result<List<string>>> SuggestLessonsAsync(string queryText, int size = 5)

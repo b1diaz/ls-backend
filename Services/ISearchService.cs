@@ -17,6 +17,4 @@ public interface ISearchService
         int pageNumber,
         int pageSize);
     Task<Result<List<string>>> SuggestLessonsAsync(string queryText, int size = 5);
-    Task<Result> CreateOrUpdateIndexerPipelineAsync();
-    Task<Result> TriggerIndexerAsync();
 }

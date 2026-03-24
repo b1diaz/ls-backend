@@ -60,6 +60,14 @@ public class LessonLearnedFunctionsTests
             .ReturnsAsync(Result<float[]>.Success(FakeEmbedding));
     }
 
+    private void SetupEnrichmentSuccess()
+    {
+        _openAI
+            .Setup(s => s.GenerateLessonEnrichmentAsync(It.IsAny<string>()))
+            .ReturnsAsync(Result<LessonEnrichment>.Success(
+                new LessonEnrichment("Incidente por falta de EPP en trabajo eléctrico")));
+    }
+
     // ─── RegisterLesson ─────────────────────────────────────────────────────────
 
     [Fact]
@@ -89,6 +97,21 @@ public class LessonLearnedFunctionsTests
         _openAI
             .Setup(s => s.GenerateEmbeddingAsync(It.IsAny<string>()))
             .ReturnsAsync(Result<float[]>.Failure("OpenAI error"));
+        SetupEnrichmentSuccess();
+
+        var req = FakeHttpRequestData.WithJson(ValidCreateRequest);
+        var response = await CreateSut().RegisterLessonAsync(req);
+        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task RegisterLesson_EnrichmentFails_Returns500()
+    {
+        SetupValidatorPass();
+        SetupEmbeddingSuccess();
+        _openAI
+            .Setup(s => s.GenerateLessonEnrichmentAsync(It.IsAny<string>()))
+            .ReturnsAsync(Result<LessonEnrichment>.Failure("OpenAI error"));
 
         var req = FakeHttpRequestData.WithJson(ValidCreateRequest);
         var response = await CreateSut().RegisterLessonAsync(req);
@@ -100,6 +123,7 @@ public class LessonLearnedFunctionsTests
     {
         SetupValidatorPass();
         SetupEmbeddingSuccess();
+        SetupEnrichmentSuccess();
         _cosmos
             .Setup(s => s.CreateLessonAsync(It.IsAny<LessonLearned>()))
             .ReturnsAsync(Result<LessonLearned>.Failure("CosmosDB error"));
@@ -114,6 +138,7 @@ public class LessonLearnedFunctionsTests
     {
         SetupValidatorPass();
         SetupEmbeddingSuccess();
+        SetupEnrichmentSuccess();
         _cosmos
             .Setup(s => s.CreateLessonAsync(It.IsAny<LessonLearned>()))
             .ReturnsAsync(Result<LessonLearned>.Success(new LessonLearned()));
@@ -131,14 +156,12 @@ public class LessonLearnedFunctionsTests
     {
         SetupValidatorPass();
         SetupEmbeddingSuccess();
+        SetupEnrichmentSuccess();
         _cosmos
             .Setup(s => s.CreateLessonAsync(It.IsAny<LessonLearned>()))
             .ReturnsAsync(Result<LessonLearned>.Success(new LessonLearned()));
         _search
             .Setup(s => s.IndexLessonAsync(It.IsAny<LessonLearned>()))
-            .ReturnsAsync(Result.Success());
-        _search
-            .Setup(s => s.TriggerIndexerAsync())
             .ReturnsAsync(Result.Success());
 
         var req = FakeHttpRequestData.WithJson(ValidCreateRequest);
@@ -313,86 +336,6 @@ public class LessonLearnedFunctionsTests
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
-    // ─── FormatearSuggest ────────────────────────────────────────────────────────
-
-    [Fact]
-    public async Task FormatearSuggest_NullBody_Returns400()
-    {
-        var req = new FakeHttpRequestData("null");
-        var response = await CreateSut().FormatearSuggestAsync(req);
-        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-    }
-
-    [Fact]
-    public async Task FormatearSuggest_EmptyValues_Returns400()
-    {
-        var req = FakeHttpRequestData.WithJson(new FormatearSuggestRequest { Values = [] });
-        var response = await CreateSut().FormatearSuggestAsync(req);
-        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-    }
-
-    [Fact]
-    public async Task FormatearSuggest_WithPhrases_Returns200WithFormattedText()
-    {
-        var request = new FormatearSuggestRequest
-        {
-            Values =
-            [
-                new FormatearSuggestRecord
-                {
-                    RecordId = "1",
-                    Data = new FormatearSuggestInputData
-                    {
-                        Code = "EVT-001",
-                        SituationType = "Near Miss",
-                        Location = "Planta A",
-                        KeyPhrases = ["epi", "altura"]
-                    }
-                }
-            ]
-        };
-
-        var req = FakeHttpRequestData.WithJson(request);
-        var response = await CreateSut().FormatearSuggestAsync(req);
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-
-        var body = ((FakeHttpResponseData)response).ReadBodyAsString();
-        Assert.Contains("EVT-001", body);
-        Assert.Contains("Near Miss", body);
-        Assert.Contains("epi", body);
-        Assert.Contains("|", body);
-    }
-
-    [Fact]
-    public async Task FormatearSuggest_NoPhrases_Returns200NoPipe()
-    {
-        var request = new FormatearSuggestRequest
-        {
-            Values =
-            [
-                new FormatearSuggestRecord
-                {
-                    RecordId = "2",
-                    Data = new FormatearSuggestInputData
-                    {
-                        Code = "EVT-002",
-                        SituationType = "Incidente",
-                        Location = "Zona B",
-                        KeyPhrases = []
-                    }
-                }
-            ]
-        };
-
-        var req = FakeHttpRequestData.WithJson(request);
-        var response = await CreateSut().FormatearSuggestAsync(req);
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-
-        var body = ((FakeHttpResponseData)response).ReadBodyAsString();
-        Assert.Contains("EVT-002", body);
-        Assert.DoesNotContain("|", body);
-    }
-
     // ─── RecreateIndex ───────────────────────────────────────────────────────────
 
     [Fact]
@@ -412,9 +355,6 @@ public class LessonLearnedFunctionsTests
     {
         _search
             .Setup(s => s.RecreateIndexAsync())
-            .ReturnsAsync(Result.Success());
-        _search
-            .Setup(s => s.CreateOrUpdateIndexerPipelineAsync())
             .ReturnsAsync(Result.Success());
 
         var req = new FakeHttpRequestData();

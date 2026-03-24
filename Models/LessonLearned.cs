@@ -69,22 +69,13 @@ public class LessonLearned
 
     /// <summary>
     /// Texto combinado con los campos de contenido principal, usado para busqueda semantica e indexacion.
-    /// Las frases clave (keyPhrases) son extraidas por el skillset de Azure AI Search a partir de este campo.
     /// </summary>
     [JsonPropertyName("searchContent")]
     public string SearchContent =>
         $"{Consequences}. {Description}. {Analysis}. {Lesson}.";
 
     /// <summary>
-    /// Frases clave extraidas por el skillset de Azure AI Search a partir de searchContent.
-    /// No se asignan desde el backend; son pobladas por el indexador de Azure Search.
-    /// </summary>
-    [JsonPropertyName("keyPhrases")]
-    public List<string> KeyPhrases { get; set; } = [];
-
-    /// <summary>
-    /// Texto formateado para el autocompletado (Suggester), generado por el custom skill de Azure AI Search.
-    /// No se asigna desde el backend; es poblado por el indexador de Azure Search.
+    /// Texto para el autocompletado (Suggester), generado al registrar la leccion.
     /// </summary>
     [JsonPropertyName("suggestDisplay")]
     public string SuggestDisplay { get; set; } = string.Empty;
@@ -108,6 +99,8 @@ public class SearchResult
     /// </summary>
     public double Score { get; set; }
 }
+
+public record LessonEnrichment(string SuggestDisplay);
 
 public class PaginatedSearchResult
 {
