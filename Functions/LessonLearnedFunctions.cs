@@ -50,8 +50,6 @@ public class LessonLearnedFunctions
         var validation = await _createValidator.ValidateAsync(request);
         if (!validation.IsValid)
             return await CreateErrorResponse(req, HttpStatusCode.BadRequest, string.Join(" | ", validation.Errors.Select(e => e.ErrorMessage)));
-
-        // Construir la lección para poder usar su SearchContent (propiedad calculada)
         var lesson = new LessonLearned
         {
             Code = request.Code,

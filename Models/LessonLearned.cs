@@ -68,11 +68,18 @@ public class LessonLearned
     public DateTime DateTime { get; set; }
 
     /// <summary>
-    /// Texto combinado con los campos de contenido principal, usado para busqueda semantica e indexacion.
+    /// Texto combinado de todos los campos relevantes, usado para búsqueda semántica e indexación.
+    /// El orden prioriza el contenido sustancial. Los valores vacíos o "N/A" se omiten para evitar ruido.
     /// </summary>
     [JsonPropertyName("searchContent")]
-    public string SearchContent =>
-        $"{Consequences}. {Description}. {Analysis}. {Lesson}.";
+    public string SearchContent => string.Join(". ", new[]
+        {
+            Description, Analysis, Consequences, Lesson,
+            SituationType, Location, RelatedPosition
+        }
+        .Where(s => !string.IsNullOrWhiteSpace(s)
+                 && !s.Equals("N/A", StringComparison.OrdinalIgnoreCase)
+                 && !s.Equals("na", StringComparison.OrdinalIgnoreCase)));
 
     /// <summary>
     /// Texto para el autocompletado (Suggester), generado al registrar la leccion.

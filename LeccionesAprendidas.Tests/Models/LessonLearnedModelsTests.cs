@@ -20,16 +20,36 @@ public class LessonLearnedModelsTests
 
         var content = lesson.SearchContent;
 
-        // SearchContent incluye los campos de contenido principal
         Assert.Contains("Desc", content);
         Assert.Contains("Analisis", content);
         Assert.Contains("Consecuencias", content);
         Assert.Contains("Leccion", content);
+        Assert.Contains("Near Miss", content);
+        Assert.Contains("Planta A", content);
+        Assert.Contains("Operador", content);
+    }
 
-        // SituationType, Location y RelatedPosition ya no forman parte de searchContent
-        Assert.DoesNotContain("Near Miss", content);
-        Assert.DoesNotContain("Planta A", content);
-        Assert.DoesNotContain("Operador", content);
+    [Fact]
+    public void SearchContent_OmitsNaAndEmptyFields()
+    {
+        var lesson = new LessonLearned
+        {
+            Description = "Desc",
+            Analysis = "Analisis",
+            Consequences = "Consecuencias",
+            Lesson = "Leccion",
+            SituationType = "N/A",
+            Location = "",
+            RelatedPosition = "na"
+        };
+
+        var content = lesson.SearchContent;
+        var segments = content.Split(". ");
+
+        // Solo los 4 campos con valor real deben estar presentes
+        Assert.Equal(4, segments.Length);
+        Assert.DoesNotContain("N/A", content);
+        Assert.DoesNotContain("..", content); // sin separadores dobles por campos vacíos
     }
 
     [Fact]

@@ -1,5 +1,3 @@
-using System.Text.Json;
-using System.Text.Json.Serialization;
 using Azure;
 using Azure.AI.OpenAI;
 using LeccionesAprendidas.Models;
@@ -9,11 +7,6 @@ namespace LeccionesAprendidas.Services;
 
 public class OpenAIService : IOpenAIService
 {
-    private static readonly JsonSerializerOptions EnrichmentJsonOptions = new()
-    {
-        PropertyNameCaseInsensitive = true
-    };
-
     private readonly OpenAIClient _client;
     private readonly string _embeddingDeployment;
     private readonly string _chatDeployment;
@@ -49,15 +42,16 @@ public class OpenAIService : IOpenAIService
                 Messages =
                 {
                     new ChatRequestSystemMessage(
-                        "Act as a Precise Data Extractor and Safety Expert. Your ONLY goal is to generate a SPANISH 'suggestDisplay' string (MAX 80 chars). " +
-                        "You MUST strictly REPLACE the placeholders in this template with actual JSON values: " +
-                        "'[SituationType] ([Technical Category]) por [Analysis Summary] en [Location] | [Consequences] ([Code])'. " +
-                        "STRICT INSTRUCTIONS: " +
-                        "1. [Code]: Use the LITERAL value of the 'Code' field (e.g., DP-24-01-01). NEVER output the word 'Código' or '[Code]'. " +
-                        "2. [Location]: Use only the city or plant name from the 'Location' field. " +
-                        "3. Keep original worker vocabulary (e.g., 'Geta', 'Susto', 'Machucón') for the [SituationType] part. " +
-                        "4. [Analysis Summary]: Summarize the 'Analysis' field in 3 words maximum. " +
-                        "5. Response must be ONLY a JSON object: { \"suggestDisplay\": \"...\" }."),
+                        "Eres un experto en seguridad industrial y gestión del conocimiento. " +
+                        "Tu tarea es leer el contenido de una lección aprendida y generar UNA SOLA FRASE en español " +
+                        "que sirva como etiqueta de búsqueda y autocompletado para esa lección. " +
+                        "El contenido incluye: descripción del evento, análisis de causas, consecuencias, " +
+                        "aprendizaje generado, tipo de situación, ubicación y cargo del involucrado. " +
+                        "La frase debe capturar los términos clave que un profesional usaría al buscar eventos similares: " +
+                        "el tipo de evento o peligro, la causa principal, el área o cargo involucrado, y el lugar. " +
+                        "Piensa en la frase como la respuesta a: '¿Qué escribiría alguien que vivió algo parecido y quiere encontrar esta lección?'. " +
+                        "Máximo 150 caracteres. " +
+                        "Responde ÚNICAMENTE con la frase, sin comillas, sin puntuación final, sin explicaciones, sin formato."),
                     new ChatRequestUserMessage(text)
                 },
                 MaxTokens = 200,
@@ -65,17 +59,10 @@ public class OpenAIService : IOpenAIService
             };
 
             var response = await _client.GetChatCompletionsAsync(chatOptions);
-            var content = response.Value.Choices[0].Message.Content;
-            var json = ExtractJsonObject(content);
-            if (string.IsNullOrWhiteSpace(json))
-                throw new InvalidOperationException("Respuesta vacía del modelo.");
+            var suggestDisplay = response.Value.Choices[0].Message.Content?.Trim() ?? string.Empty;
 
-            var dto = JsonSerializer.Deserialize<EnrichmentResponse>(json, EnrichmentJsonOptions)
-                ?? throw new InvalidOperationException("Respuesta vacía del modelo.");
-
-            var suggestDisplay = (dto.SuggestDisplay ?? string.Empty).Trim();
             if (string.IsNullOrEmpty(suggestDisplay))
-                throw new InvalidOperationException("El modelo no devolvió suggestDisplay válido.");
+                throw new InvalidOperationException("El modelo no devolvió texto válido.");
 
             return Result<LessonEnrichment>.Success(new LessonEnrichment(suggestDisplay));
         }
@@ -84,46 +71,5 @@ public class OpenAIService : IOpenAIService
             return Result<LessonEnrichment>.Failure($"Error generating lesson enrichment: {ex.Message}");
         }
     }
-
-    /// <summary>
-    /// El modelo suele envolver JSON en bloques Markdown (```json ... ```) o añadir texto alrededor.
-    /// </summary>
-    private static string ExtractJsonObject(string? raw)
-    {
-        if (string.IsNullOrWhiteSpace(raw))
-            return string.Empty;
-
-        var s = raw.Trim();
-
-        if (s.StartsWith("```", StringComparison.Ordinal))
-        {
-            var lineBreak = s.IndexOf('\n');
-            s = lineBreak >= 0 ? s[(lineBreak + 1)..].TrimStart() : s[3..].TrimStart();
-            var closing = s.LastIndexOf("```", StringComparison.Ordinal);
-            if (closing >= 0)
-                s = s[..closing].Trim();
-        }
-
-        var start = s.IndexOf('{');
-        if (start < 0)
-            return s;
-
-        var depth = 0;
-        for (var i = start; i < s.Length; i++)
-        {
-            if (s[i] == '{')
-                depth++;
-            else if (s[i] == '}')
-            {
-                depth--;
-                if (depth == 0)
-                    return s[start..(i + 1)];
-            }
-        }
-
-        return s[start..];
-    }
-
-    private record EnrichmentResponse([property: JsonPropertyName("suggestDisplay")] string? SuggestDisplay);
 }
 
