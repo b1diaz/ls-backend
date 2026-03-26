@@ -21,6 +21,11 @@ namespace LeccionesAprendidas.Validations
                 .InclusiveBetween(0, 1)
                 .When(x => x.MinScore.HasValue)
                 .WithMessage("MinScore debe estar entre 0 y 1.");
+
+            var allowedFields = new[] { "searchContent", "description", "analysis", "consequences", "lesson" };
+            RuleFor(x => x.Field)
+                .Must(f => f == null || allowedFields.Contains(f))
+                .WithMessage($"Field debe ser uno de: {string.Join(", ", allowedFields)}.");
         }
     }
 }

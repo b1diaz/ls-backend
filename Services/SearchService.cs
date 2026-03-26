@@ -83,22 +83,37 @@ public class SearchService : ISearchService
                     IsFilterable = true,
                     IsSortable = true
                 },
-                new SearchableField("suggestDisplay")
-                {
-                    IsFilterable = false,
-                    IsSortable = false
-                },
-                // Embedding unificado de searchContent para busqueda vectorial
+                // Embeddings vectoriales por campo
                 new SearchField("searchContentEmbedding", SearchFieldDataType.Collection(SearchFieldDataType.Single))
                 {
                     IsSearchable = true,
                     VectorSearchDimensions = 3072,
                     VectorSearchProfileName = "vector-profile-1"
+                },
+                new SearchField("descriptionEmbedding", SearchFieldDataType.Collection(SearchFieldDataType.Single))
+                {
+                    IsSearchable = true,
+                    VectorSearchDimensions = 3072,
+                    VectorSearchProfileName = "vector-profile-1"
+                },
+                new SearchField("analysisEmbedding", SearchFieldDataType.Collection(SearchFieldDataType.Single))
+                {
+                    IsSearchable = true,
+                    VectorSearchDimensions = 3072,
+                    VectorSearchProfileName = "vector-profile-1"
+                },
+                new SearchField("consequencesEmbedding", SearchFieldDataType.Collection(SearchFieldDataType.Single))
+                {
+                    IsSearchable = true,
+                    VectorSearchDimensions = 3072,
+                    VectorSearchProfileName = "vector-profile-1"
+                },
+                new SearchField("lessonEmbedding", SearchFieldDataType.Collection(SearchFieldDataType.Single))
+                {
+                    IsSearchable = true,
+                    VectorSearchDimensions = 3072,
+                    VectorSearchProfileName = "vector-profile-1"
                 }
-            },
-            Suggesters =
-            {
-                new SearchSuggester("suggester-1", new[] { "suggestDisplay" })
             },
             VectorSearch = new VectorSearch
             {
@@ -130,7 +145,7 @@ public class SearchService : ISearchService
             var existingIndex = await _adminClient.GetIndexAsync(_indexName);
             
             // Verificar si el índice tiene la estructura correcta
-            var requiredFields = new[] { "searchContentEmbedding", "suggestDisplay" };
+            var requiredFields = new[] { "searchContentEmbedding", "descriptionEmbedding", "analysisEmbedding", "consequencesEmbedding", "lessonEmbedding" };
             var existingFieldNames = existingIndex.Value.Fields.Select(f => f.Name).ToHashSet();
             
             bool hasRequiredFields = requiredFields.All(field => existingFieldNames.Contains(field));
@@ -204,9 +219,6 @@ public class SearchService : ISearchService
 
             try
             {
-                foreach (var lesson in batch)
-                    EnsureIndexableLesson(lesson);
-
                 var indexBatch = IndexDocumentsBatch.Upload(batch);
                 var response = await _searchClient.IndexDocumentsAsync(indexBatch);
 
@@ -229,7 +241,6 @@ public class SearchService : ISearchService
     {
         try
         {
-            EnsureIndexableLesson(lesson);
             var batch = IndexDocumentsBatch.Upload(new[] { lesson });
             var response = await _searchClient.IndexDocumentsAsync(batch);
 
@@ -251,6 +262,15 @@ public class SearchService : ISearchService
     }
 
 
+    private static readonly Dictionary<string, string> FieldToEmbedding = new()
+    {
+        ["searchContent"] = "searchContentEmbedding",
+        ["description"]   = "descriptionEmbedding",
+        ["analysis"]      = "analysisEmbedding",
+        ["consequences"]  = "consequencesEmbedding",
+        ["lesson"]        = "lessonEmbedding"
+    };
+
     public async Task<Result<PaginatedSearchResult>> SearchLessonsAsync(
         string queryText,
         float[] queryEmbedding,
@@ -258,7 +278,8 @@ public class SearchService : ISearchService
         DateTime? dateTo = null,
         double? minScore = null,
         int pageNumber = 1,
-        int pageSize = 10)
+        int pageSize = 10,
+        string field = "searchContent")
     {
         try
         {
@@ -277,7 +298,7 @@ public class SearchService : ISearchService
                 Size = take,
                 Skip = skip,
                 IncludeTotalCount = true,
-                Select = { "id", "code", "description", "lesson", "situationType", "location", "relatedPosition", "analysis", "consequences", "dateTime", "searchContent", "suggestDisplay" }
+                Select = { "id", "code", "description", "lesson", "situationType", "location", "relatedPosition", "analysis", "consequences", "dateTime", "searchContent" }
             };
 
             // Construir filtro OData para fechas
@@ -306,17 +327,18 @@ public class SearchService : ISearchService
                 options.Filter = string.Join(" and ", filters);
             }
 
-            // Configurar búsqueda vectorial siempre sobre searchContentEmbedding
-            options.VectorSearch ??= new VectorSearchOptions();
+            // Seleccionar embedding del campo solicitado
+            var embeddingField = FieldToEmbedding.TryGetValue(field, out var ef) ? ef : "searchContentEmbedding";
 
-            // KNearestNeighborsCount debe cubrir todos los candidatos necesarios antes de aplicar Skip+Size
+            // Búsqueda solo por similitud semántica (vectorial pura, sin BM25)
+            options.VectorSearch ??= new VectorSearchOptions();
             options.VectorSearch.Queries.Add(new VectorizedQuery(queryEmbedding)
             {
                 KNearestNeighborsCount = skip + take,
-                Fields = { "searchContentEmbedding" }
+                Fields = { embeddingField }
             });
 
-            var response = await _searchClient.SearchAsync<LessonLearned>(queryText, options);
+            var response = await _searchClient.SearchAsync<LessonLearned>(null, options);
             var results = response.Value.GetResults();
             var totalCount = response.Value.TotalCount ?? 0;
 
@@ -355,31 +377,114 @@ public class SearchService : ISearchService
     }
 
 
-    private static void EnsureIndexableLesson(LessonLearned lesson)
+    private static readonly HashSet<string> AllowedHighlightFields =
+        new() { "searchContent", "consequences", "description", "analysis", "lesson" };
+
+    // Extrae una ventana de contexto de ~windowSize chars alrededor del primer <mark>
+    private static string TrimHighlight(string highlight, int windowSize = 180)
     {
-        lesson.SuggestDisplay ??= string.Empty;
+        var markStart = highlight.IndexOf("<mark>", StringComparison.Ordinal);
+        if (markStart < 0)
+            return highlight.Length <= windowSize ? highlight : highlight[..windowSize] + "…";
+
+        // Centro de la ventana: mitad antes del <mark>, mitad después del </mark>
+        var half = windowSize / 2;
+        var start = Math.Max(0, markStart - half);
+        var end = Math.Min(highlight.Length, markStart + windowSize);
+
+        var snippet = highlight[start..end];
+
+        // Añadir elipsis si el snippet no empieza/termina en el extremo del texto
+        if (start > 0) snippet = "…" + snippet.TrimStart();
+        if (end < highlight.Length) snippet = snippet.TrimEnd() + "…";
+
+        return snippet;
     }
 
-    public async Task<Result<List<string>>> SuggestLessonsAsync(string queryText, int size = 5)
+    private static string GetFieldContent(LessonLearned lesson, string field) => field switch
+    {
+        "description"  => lesson.Description,
+        "analysis"     => lesson.Analysis,
+        "consequences" => lesson.Consequences,
+        "lesson"       => lesson.Lesson,
+        _              => lesson.SearchContent
+    };
+
+    // Extrae un fragmento del texto plano alrededor de la primera aparición de cualquier palabra de la query
+    private static string ExtractFallbackExcerpt(string? text, string queryText, int windowSize = 180)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return string.Empty;
+
+        var idx = -1;
+        foreach (var word in queryText.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+        {
+            idx = text.IndexOf(word, StringComparison.OrdinalIgnoreCase);
+            if (idx >= 0) break;
+        }
+
+        // Sin coincidencia de texto → mostrar inicio del campo (match fue semántico)
+        if (idx < 0)
+            return text.Length <= windowSize ? text : text[..windowSize] + "…";
+
+        var start = Math.Max(0, idx - windowSize / 2);
+        var end   = Math.Min(text.Length, idx + windowSize);
+        var snippet = text[start..end];
+        if (start > 0) snippet = "…" + snippet.TrimStart();
+        if (end < text.Length) snippet = snippet.TrimEnd() + "…";
+        return snippet;
+    }
+
+    public async Task<Result<List<SuggestionResult>>> SuggestLessonsAsync(string queryText, float[] queryEmbedding, int size = 5, string field = "searchContent")
     {
         try
         {
-            var options = new SuggestOptions
+            var searchField    = AllowedHighlightFields.Contains(field) ? field : "searchContent";
+            var embeddingField = FieldToEmbedding.TryGetValue(searchField, out var ef) ? ef : "searchContentEmbedding";
+
+            var options = new SearchOptions
             {
                 Size = size,
-                UseFuzzyMatching = true
+                HighlightPreTag = "<mark>",
+                HighlightPostTag = "</mark>"
             };
+            options.Select.Add("id");
+            options.Select.Add("code");
+            options.Select.Add(searchField);          // necesario para el fallback excerpt
+            options.HighlightFields.Add(searchField);
+            options.SearchFields.Add(searchField);    // texto solo busca en el campo seleccionado
 
-            var response = await _searchClient.SuggestAsync<LessonLearned>(queryText, "suggester-1", options);
-            var suggestions = response.Value.Results
-                .Select(r => r.Text)
+            // Búsqueda híbrida: texto (BM25 restringido al campo) + vector (embedding del campo)
+            options.VectorSearch = new VectorSearchOptions();
+            options.VectorSearch.Queries.Add(new VectorizedQuery(queryEmbedding)
+            {
+                KNearestNeighborsCount = size,
+                Fields = { embeddingField }
+            });
+
+            var response = await _searchClient.SearchAsync<LessonLearned>(queryText, options);
+            var results = response.Value.GetResults()
+                .Select(r =>
+                {
+                    var hasHighlight = r.Highlights != null
+                        && r.Highlights.TryGetValue(searchField, out var hl)
+                        && hl.Count > 0;
+
+                    return new SuggestionResult
+                    {
+                        Id   = r.Document.Id,
+                        Code = r.Document.Code,
+                        Highlights = hasHighlight
+                            ? r.Highlights![searchField].Select(h => TrimHighlight(h)).ToList()
+                            : new List<string> { ExtractFallbackExcerpt(GetFieldContent(r.Document, searchField), queryText) }
+                    };
+                })
                 .ToList();
 
-            return Result<List<string>>.Success(suggestions);
+            return Result<List<SuggestionResult>>.Success(results);
         }
         catch (Exception ex)
         {
-            return Result<List<string>>.Failure($"Error fetching suggestions: {ex.Message}");
+            return Result<List<SuggestionResult>>.Failure($"Error fetching suggestions: {ex.Message}");
         }
     }
 

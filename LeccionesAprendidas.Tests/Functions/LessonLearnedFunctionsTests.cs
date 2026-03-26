@@ -60,14 +60,6 @@ public class LessonLearnedFunctionsTests
             .ReturnsAsync(Result<float[]>.Success(FakeEmbedding));
     }
 
-    private void SetupEnrichmentSuccess()
-    {
-        _openAI
-            .Setup(s => s.GenerateLessonEnrichmentAsync(It.IsAny<string>()))
-            .ReturnsAsync(Result<LessonEnrichment>.Success(
-                new LessonEnrichment("Incidente por falta de EPP en trabajo eléctrico")));
-    }
-
     // ─── RegisterLesson ─────────────────────────────────────────────────────────
 
     [Fact]
@@ -97,21 +89,6 @@ public class LessonLearnedFunctionsTests
         _openAI
             .Setup(s => s.GenerateEmbeddingAsync(It.IsAny<string>()))
             .ReturnsAsync(Result<float[]>.Failure("OpenAI error"));
-        SetupEnrichmentSuccess();
-
-        var req = FakeHttpRequestData.WithJson(ValidCreateRequest);
-        var response = await CreateSut().RegisterLessonAsync(req);
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
-    }
-
-    [Fact]
-    public async Task RegisterLesson_EnrichmentFails_Returns500()
-    {
-        SetupValidatorPass();
-        SetupEmbeddingSuccess();
-        _openAI
-            .Setup(s => s.GenerateLessonEnrichmentAsync(It.IsAny<string>()))
-            .ReturnsAsync(Result<LessonEnrichment>.Failure("OpenAI error"));
 
         var req = FakeHttpRequestData.WithJson(ValidCreateRequest);
         var response = await CreateSut().RegisterLessonAsync(req);
@@ -123,7 +100,6 @@ public class LessonLearnedFunctionsTests
     {
         SetupValidatorPass();
         SetupEmbeddingSuccess();
-        SetupEnrichmentSuccess();
         _cosmos
             .Setup(s => s.CreateLessonAsync(It.IsAny<LessonLearned>()))
             .ReturnsAsync(Result<LessonLearned>.Failure("CosmosDB error"));
@@ -138,7 +114,6 @@ public class LessonLearnedFunctionsTests
     {
         SetupValidatorPass();
         SetupEmbeddingSuccess();
-        SetupEnrichmentSuccess();
         _cosmos
             .Setup(s => s.CreateLessonAsync(It.IsAny<LessonLearned>()))
             .ReturnsAsync(Result<LessonLearned>.Success(new LessonLearned()));
@@ -156,7 +131,6 @@ public class LessonLearnedFunctionsTests
     {
         SetupValidatorPass();
         SetupEmbeddingSuccess();
-        SetupEnrichmentSuccess();
         _cosmos
             .Setup(s => s.CreateLessonAsync(It.IsAny<LessonLearned>()))
             .ReturnsAsync(Result<LessonLearned>.Success(new LessonLearned()));
@@ -167,6 +141,48 @@ public class LessonLearnedFunctionsTests
         var req = FakeHttpRequestData.WithJson(ValidCreateRequest);
         var response = await CreateSut().RegisterLessonAsync(req);
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+    }
+
+    // ─── GetLesson ───────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task GetLesson_NotFound_Returns404()
+    {
+        _cosmos
+            .Setup(s => s.GetLessonByIdAsync(It.IsAny<string>()))
+            .ReturnsAsync(Result<LessonLearned>.Failure("NOT_FOUND"));
+
+        var req = new FakeHttpRequestData();
+        var response = await CreateSut().GetLessonAsync(req, "id-inexistente");
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task GetLesson_CosmosDbFails_Returns500()
+    {
+        _cosmos
+            .Setup(s => s.GetLessonByIdAsync(It.IsAny<string>()))
+            .ReturnsAsync(Result<LessonLearned>.Failure("CosmosDB error"));
+
+        var req = new FakeHttpRequestData();
+        var response = await CreateSut().GetLessonAsync(req, "cualquier-id");
+        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task GetLesson_Success_Returns200WithLesson()
+    {
+        var lesson = new LessonLearned { Id = "abc-123", Code = "EVT-001" };
+        _cosmos
+            .Setup(s => s.GetLessonByIdAsync("abc-123"))
+            .ReturnsAsync(Result<LessonLearned>.Success(lesson));
+
+        var req = new FakeHttpRequestData();
+        var response = await CreateSut().GetLessonAsync(req, "abc-123");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var body = ((FakeHttpResponseData)response).ReadBodyAsString();
+        Assert.Contains("EVT-001", body);
     }
 
     // ─── SearchLessons ───────────────────────────────────────────────────────────
@@ -213,7 +229,7 @@ public class LessonLearnedFunctionsTests
             .Setup(s => s.SearchLessonsAsync(
                 It.IsAny<string>(), It.IsAny<float[]>(),
                 It.IsAny<DateTime?>(), It.IsAny<DateTime?>(), It.IsAny<double?>(),
-                It.IsAny<int>(), It.IsAny<int>()))
+                It.IsAny<int>(), It.IsAny<int>(), It.IsAny<string>()))
             .ReturnsAsync(Result<PaginatedSearchResult>.Failure("Search error"));
 
         var req = FakeHttpRequestData.WithJson(ValidSearchRequest);
@@ -230,7 +246,7 @@ public class LessonLearnedFunctionsTests
             .Setup(s => s.SearchLessonsAsync(
                 It.IsAny<string>(), It.IsAny<float[]>(),
                 It.IsAny<DateTime?>(), It.IsAny<DateTime?>(), It.IsAny<double?>(),
-                It.IsAny<int>(), It.IsAny<int>()))
+                It.IsAny<int>(), It.IsAny<int>(), It.IsAny<string>()))
             .ReturnsAsync(Result<PaginatedSearchResult>.Success(new PaginatedSearchResult()));
 
         var req = FakeHttpRequestData.WithJson(ValidSearchRequest);
@@ -313,11 +329,24 @@ public class LessonLearnedFunctionsTests
     }
 
     [Fact]
+    public async Task SuggestLessons_EmbeddingFails_Returns500()
+    {
+        _openAI
+            .Setup(s => s.GenerateEmbeddingAsync(It.IsAny<string>()))
+            .ReturnsAsync(Result<float[]>.Failure("OpenAI error"));
+
+        var req = FakeHttpRequestData.WithJson(new SuggestLessonRequest { Query = "caída" });
+        var response = await CreateSut().SuggestLessonsAsync(req);
+        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+    }
+
+    [Fact]
     public async Task SuggestLessons_SuggestFails_Returns500()
     {
+        SetupEmbeddingSuccess();
         _search
-            .Setup(s => s.SuggestLessonsAsync(It.IsAny<string>(), It.IsAny<int>()))
-            .ReturnsAsync(Result<List<string>>.Failure("Search error"));
+            .Setup(s => s.SuggestLessonsAsync(It.IsAny<string>(), It.IsAny<float[]>(), It.IsAny<int>(), It.IsAny<string>()))
+            .ReturnsAsync(Result<List<SuggestionResult>>.Failure("Search error"));
 
         var req = FakeHttpRequestData.WithJson(new SuggestLessonRequest { Query = "caída" });
         var response = await CreateSut().SuggestLessonsAsync(req);
@@ -327,9 +356,13 @@ public class LessonLearnedFunctionsTests
     [Fact]
     public async Task SuggestLessons_Success_Returns200()
     {
+        SetupEmbeddingSuccess();
         _search
-            .Setup(s => s.SuggestLessonsAsync(It.IsAny<string>(), It.IsAny<int>()))
-            .ReturnsAsync(Result<List<string>>.Success(new List<string> { "[EVT-001] Near Miss - Planta A | caída" }));
+            .Setup(s => s.SuggestLessonsAsync(It.IsAny<string>(), It.IsAny<float[]>(), It.IsAny<int>(), It.IsAny<string>()))
+            .ReturnsAsync(Result<List<SuggestionResult>>.Success(new List<SuggestionResult>
+            {
+                new() { Id = "1", Code = "EVT-001", Highlights = new() { "...caída desde altura..." } }
+            }));
 
         var req = FakeHttpRequestData.WithJson(new SuggestLessonRequest { Query = "caída" });
         var response = await CreateSut().SuggestLessonsAsync(req);

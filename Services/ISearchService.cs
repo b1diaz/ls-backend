@@ -15,6 +15,7 @@ public interface ISearchService
         DateTime? dateTo,
         double? minScore,
         int pageNumber,
-        int pageSize);
-    Task<Result<List<string>>> SuggestLessonsAsync(string queryText, int size = 5);
+        int pageSize,
+        string field = "searchContent");
+    Task<Result<List<SuggestionResult>>> SuggestLessonsAsync(string queryText, float[] queryEmbedding, int size = 5, string field = "searchContent");
 }

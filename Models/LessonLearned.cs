@@ -82,16 +82,34 @@ public class LessonLearned
                  && !s.Equals("na", StringComparison.OrdinalIgnoreCase)));
 
     /// <summary>
-    /// Texto para el autocompletado (Suggester), generado al registrar la leccion.
-    /// </summary>
-    [JsonPropertyName("suggestDisplay")]
-    public string SuggestDisplay { get; set; } = string.Empty;
-
-    /// <summary>
-    /// Representacion numerica de searchContent (embedding) para comparacion semantica mediante IA.
+    /// Embedding de searchContent (todos los campos relevantes concatenados).
     /// </summary>
     [JsonPropertyName("searchContentEmbedding")]
     public float[] SearchContentEmbedding { get; set; } = [];
+
+    /// <summary>
+    /// Embedding del campo Description para búsqueda semántica específica.
+    /// </summary>
+    [JsonPropertyName("descriptionEmbedding")]
+    public float[] DescriptionEmbedding { get; set; } = [];
+
+    /// <summary>
+    /// Embedding del campo Analysis para búsqueda semántica específica.
+    /// </summary>
+    [JsonPropertyName("analysisEmbedding")]
+    public float[] AnalysisEmbedding { get; set; } = [];
+
+    /// <summary>
+    /// Embedding del campo Consequences para búsqueda semántica específica.
+    /// </summary>
+    [JsonPropertyName("consequencesEmbedding")]
+    public float[] ConsequencesEmbedding { get; set; } = [];
+
+    /// <summary>
+    /// Embedding del campo Lesson para búsqueda semántica específica.
+    /// </summary>
+    [JsonPropertyName("lessonEmbedding")]
+    public float[] LessonEmbedding { get; set; } = [];
 }
 
 public class SearchResult
@@ -107,7 +125,6 @@ public class SearchResult
     public double Score { get; set; }
 }
 
-public record LessonEnrichment(string SuggestDisplay);
 
 public class PaginatedSearchResult
 {

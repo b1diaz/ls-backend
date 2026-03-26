@@ -86,4 +86,26 @@ public class SearchLessonRequestValidatorTests
         var resultOne = await _validator.ValidateAsync(reqOne);
         Assert.True(resultOne.IsValid);
     }
+
+    [Fact]
+    public async Task Valid_Field_Passes()
+    {
+        foreach (var field in new[] { "searchContent", "description", "analysis", "consequences", "lesson" })
+        {
+            var req = ValidRequest();
+            req.Field = field;
+            var result = await _validator.ValidateAsync(req);
+            Assert.True(result.IsValid, $"Field '{field}' debería ser válido.");
+        }
+    }
+
+    [Fact]
+    public async Task Invalid_Field_Fails()
+    {
+        var req = ValidRequest();
+        req.Field = "campoInexistente";
+        var result = await _validator.ValidateAsync(req);
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, e => e.PropertyName == nameof(SearchLessonRequest.Field));
+    }
 }

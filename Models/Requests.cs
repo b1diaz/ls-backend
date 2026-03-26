@@ -88,6 +88,13 @@ public class SearchLessonRequest
     /// Cantidad de resultados por página. Valores permitidos: 10, 25, 50, 100. Por defecto es 10.
     /// </summary>
     public int PageSize { get; set; } = 10;
+
+    /// <summary>
+    /// Campo sobre el que se realizará la búsqueda semántica (vectorial).
+    /// Valores permitidos: searchContent, consequences, description, analysis, lesson.
+    /// Por defecto es searchContent.
+    /// </summary>
+    public string? Field { get; set; }
 }
 
 public class SuggestLessonRequest
@@ -101,5 +108,30 @@ public class SuggestLessonRequest
     /// Cantidad máxima de sugerencias a retornar. Por defecto es 5.
     /// </summary>
     public int Size { get; set; } = 5;
+
+    /// <summary>
+    /// Campo sobre el que se realizará la búsqueda con highlighting.
+    /// Valores permitidos: searchContent, consequences, description, analysis, lesson.
+    /// Por defecto es searchContent.
+    /// </summary>
+    public string? Field { get; set; }
+}
+
+public class SuggestionResult
+{
+    /// <summary>
+    /// Identificador único de la lección aprendida.
+    /// </summary>
+    public string Id { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Código del evento.
+    /// </summary>
+    public string Code { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Fragmentos de texto con el término buscado resaltado con etiquetas &lt;mark&gt;.
+    /// </summary>
+    public List<string> Highlights { get; set; } = new();
 }
 

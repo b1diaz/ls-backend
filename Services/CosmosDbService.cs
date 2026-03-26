@@ -39,6 +39,30 @@ public class CosmosDbService : ICosmosDbService
     }
 
 
+    public async Task<Result<LessonLearned>> GetLessonByIdAsync(string id)
+    {
+        try
+        {
+            var query = _container.GetItemQueryIterator<LessonLearned>(
+                new QueryDefinition("SELECT * FROM c WHERE c.id = @id")
+                    .WithParameter("@id", id));
+
+            while (query.HasMoreResults)
+            {
+                var page = await query.ReadNextAsync();
+                var lesson = page.FirstOrDefault();
+                if (lesson != null)
+                    return Result<LessonLearned>.Success(lesson);
+            }
+
+            return Result<LessonLearned>.Failure("NOT_FOUND");
+        }
+        catch (Exception ex)
+        {
+            return Result<LessonLearned>.Failure($"Unexpected error fetching lesson: {ex.Message}");
+        }
+    }
+
     public async Task<Result<List<LessonLearned>>> GetLessonsAsync()
     {
         var query = _container.GetItemQueryIterator<LessonLearned>();

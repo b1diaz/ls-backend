@@ -63,20 +63,37 @@ public class LessonLearnedFunctions
             DateTime = request.DateTime
         };
 
-        var embeddingTask = _openAIService.GenerateEmbeddingAsync(lesson.SearchContent);
-        var enrichmentTask = _openAIService.GenerateLessonEnrichmentAsync(lesson.SearchContent);
-        await Task.WhenAll(embeddingTask, enrichmentTask);
+        // Generar embeddings en paralelo para todos los campos con contenido
+        var embeddingInputs = new Dictionary<string, string>
+        {
+            ["searchContent"] = lesson.SearchContent,
+            ["description"]   = lesson.Description,
+            ["analysis"]      = lesson.Analysis,
+            ["consequences"]  = lesson.Consequences,
+            ["lesson"]        = lesson.Lesson
+        };
 
-        var embeddingResult = await embeddingTask;
-        if (embeddingResult.IsError)
-            return await CreateErrorResponse(req, HttpStatusCode.InternalServerError, embeddingResult.Error ?? "Unknown error generating embedding.");
+        var embeddingTasks = embeddingInputs
+            .Where(kv => !string.IsNullOrWhiteSpace(kv.Value))
+            .Select(kv => (kv.Key, Task: _openAIService.GenerateEmbeddingAsync(kv.Value)))
+            .ToList();
 
-        var enrichmentResult = await enrichmentTask;
-        if (enrichmentResult.IsError)
-            return await CreateErrorResponse(req, HttpStatusCode.InternalServerError, enrichmentResult.Error ?? "Unknown error generating lesson enrichment.");
+        await Task.WhenAll(embeddingTasks.Select(t => t.Task));
 
-        lesson.SearchContentEmbedding = embeddingResult.Value!;
-        lesson.SuggestDisplay = enrichmentResult.Value!.SuggestDisplay;
+        var embeddings = new Dictionary<string, float[]>();
+        foreach (var (key, task) in embeddingTasks)
+        {
+            var result = await task;
+            if (result.IsError)
+                return await CreateErrorResponse(req, HttpStatusCode.InternalServerError, result.Error ?? $"Error generating {key} embedding.");
+            embeddings[key] = result.Value!;
+        }
+
+        lesson.SearchContentEmbedding = embeddings.GetValueOrDefault("searchContent", []);
+        lesson.DescriptionEmbedding   = embeddings.GetValueOrDefault("description", []);
+        lesson.AnalysisEmbedding      = embeddings.GetValueOrDefault("analysis", []);
+        lesson.ConsequencesEmbedding  = embeddings.GetValueOrDefault("consequences", []);
+        lesson.LessonEmbedding        = embeddings.GetValueOrDefault("lesson", []);
 
         var saveResult = await _cosmosDbService.CreateLessonAsync(lesson);
         if (saveResult.IsError)
@@ -88,6 +105,26 @@ public class LessonLearnedFunctions
 
         var response = req.CreateResponse(HttpStatusCode.OK);
         await response.WriteAsJsonAsync(saveResult.Value, HttpStatusCode.Created);
+        return response;
+    }
+
+    [Function("GetLesson")]
+    public async Task<HttpResponseData> GetLessonAsync(
+        [HttpTrigger(AuthorizationLevel.Function, "get", Route = "lessons/{id}")] HttpRequestData req,
+        string id)
+    {
+        var result = await _cosmosDbService.GetLessonByIdAsync(id);
+
+        if (result.IsError)
+        {
+            var statusCode = result.Error == "NOT_FOUND"
+                ? HttpStatusCode.NotFound
+                : HttpStatusCode.InternalServerError;
+            return await CreateErrorResponse(req, statusCode, result.Error ?? "Unknown error.");
+        }
+
+        var response = req.CreateResponse(HttpStatusCode.OK);
+        await response.WriteAsJsonAsync(result.Value);
         return response;
     }
 
@@ -116,7 +153,8 @@ public class LessonLearnedFunctions
             request.DateTo,
             request.MinScore,
             request.PageNumber,
-            request.PageSize);
+            request.PageSize,
+            request.Field ?? "searchContent");
 
         if (searchResult.IsError)
             return await CreateErrorResponse(req, HttpStatusCode.InternalServerError, searchResult.Error ?? "Unknown error searching lessons.");
@@ -178,7 +216,11 @@ public class LessonLearnedFunctions
         if (request is null || string.IsNullOrWhiteSpace(request.Query))
             return await CreateErrorResponse(req, HttpStatusCode.BadRequest, "Query is required.");
 
-        var suggestResult = await _searchService.SuggestLessonsAsync(request.Query, request.Size);
+        var embeddingResult = await _openAIService.GenerateEmbeddingAsync(request.Query);
+        if (embeddingResult.IsError)
+            return await CreateErrorResponse(req, HttpStatusCode.InternalServerError, embeddingResult.Error ?? "Unknown error generating embedding.");
+
+        var suggestResult = await _searchService.SuggestLessonsAsync(request.Query, embeddingResult.Value!, request.Size, request.Field ?? "searchContent");
         if (suggestResult.IsError)
             return await CreateErrorResponse(req, HttpStatusCode.InternalServerError, suggestResult.Error ?? "Unknown error fetching suggestions.");
 

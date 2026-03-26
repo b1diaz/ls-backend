@@ -5,5 +5,6 @@ namespace LeccionesAprendidas.Services;
 public interface ICosmosDbService
 {
     Task<Result<LessonLearned>> CreateLessonAsync(LessonLearned lesson);
+    Task<Result<LessonLearned>> GetLessonByIdAsync(string id);
     Task<Result<List<LessonLearned>>> GetLessonsAsync();
 }
