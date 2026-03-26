@@ -104,7 +104,7 @@ public class LessonLearnedFunctions
             return await CreateErrorResponse(req, HttpStatusCode.InternalServerError, indexResult.Error ?? "Unknown error indexing lesson.");
 
         var response = req.CreateResponse(HttpStatusCode.OK);
-        await response.WriteAsJsonAsync(saveResult.Value, HttpStatusCode.Created);
+        await response.WriteAsJsonAsync(LessonLearnedDetail.From(saveResult.Value!), HttpStatusCode.Created);
         return response;
     }
 
@@ -124,7 +124,7 @@ public class LessonLearnedFunctions
         }
 
         var response = req.CreateResponse(HttpStatusCode.OK);
-        await response.WriteAsJsonAsync(result.Value);
+        await response.WriteAsJsonAsync(LessonLearnedDetail.From(result.Value!));
         return response;
     }
 

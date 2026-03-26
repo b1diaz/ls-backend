@@ -112,6 +112,36 @@ public class LessonLearned
     public float[] LessonEmbedding { get; set; } = [];
 }
 
+public class LessonLearnedDetail
+{
+    public string Id { get; init; } = string.Empty;
+    public string Code { get; init; } = string.Empty;
+    public string Description { get; init; } = string.Empty;
+    public string SituationType { get; init; } = string.Empty;
+    public string Location { get; init; } = string.Empty;
+    public string RelatedPosition { get; init; } = string.Empty;
+    public string Analysis { get; init; } = string.Empty;
+    public string Consequences { get; init; } = string.Empty;
+    public string Lesson { get; init; } = string.Empty;
+    public DateTime DateTime { get; init; }
+    public string SearchContent { get; init; } = string.Empty;
+
+    public static LessonLearnedDetail From(LessonLearned l) => new()
+    {
+        Id             = l.Id,
+        Code           = l.Code,
+        Description    = l.Description,
+        SituationType  = l.SituationType,
+        Location       = l.Location,
+        RelatedPosition = l.RelatedPosition,
+        Analysis       = l.Analysis,
+        Consequences   = l.Consequences,
+        Lesson         = l.Lesson,
+        DateTime       = l.DateTime,
+        SearchContent  = l.SearchContent
+    };
+}
+
 public class SearchResult
 {
     /// <summary>
