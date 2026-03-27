@@ -330,11 +330,14 @@ public class SearchService : ISearchService
             // Seleccionar embedding del campo solicitado
             var embeddingField = FieldToEmbedding.TryGetValue(field, out var ef) ? ef : "searchContentEmbedding";
 
-            // Búsqueda solo por similitud semántica (vectorial pura, sin BM25)
+            // KNearestNeighborsCount alto para que Azure Search evalúe suficientes candidatos
+            // y TotalCount refleje el total real, no solo los de la página actual
+            const int maxCandidates = 1000;
+
             options.VectorSearch ??= new VectorSearchOptions();
             options.VectorSearch.Queries.Add(new VectorizedQuery(queryEmbedding)
             {
-                KNearestNeighborsCount = skip + take,
+                KNearestNeighborsCount = Math.Max(maxCandidates, skip + take),
                 Fields = { embeddingField }
             });
 
