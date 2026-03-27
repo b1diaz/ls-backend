@@ -113,6 +113,15 @@ public class LessonLearnedFunctions
         [HttpTrigger(AuthorizationLevel.Function, "get", Route = "lessons/{id}")] HttpRequestData req,
         string id)
     {
+        if (string.IsNullOrWhiteSpace(id))
+        {
+            req.FunctionContext.BindingContext.BindingData.TryGetValue("id", out var raw);
+            id = raw?.ToString() ?? string.Empty;
+        }
+
+        if (string.IsNullOrWhiteSpace(id))
+            return await CreateErrorResponse(req, HttpStatusCode.BadRequest, "Id es requerido.");
+
         var result = await _cosmosDbService.GetLessonByIdAsync(id);
 
         if (result.IsError)
