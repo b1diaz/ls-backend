@@ -229,7 +229,7 @@ public class LessonLearnedFunctionsTests
             .Setup(s => s.SearchLessonsAsync(
                 It.IsAny<string>(), It.IsAny<float[]>(),
                 It.IsAny<DateTime?>(), It.IsAny<DateTime?>(), It.IsAny<double?>(),
-                It.IsAny<int>(), It.IsAny<int>(), It.IsAny<string>()))
+                It.IsAny<int>(), It.IsAny<int>(), It.IsAny<string>(), It.IsAny<LessonSource?>()))
             .ReturnsAsync(Result<PaginatedSearchResult>.Failure("Search error"));
 
         var req = FakeHttpRequestData.WithJson(ValidSearchRequest);
@@ -246,7 +246,7 @@ public class LessonLearnedFunctionsTests
             .Setup(s => s.SearchLessonsAsync(
                 It.IsAny<string>(), It.IsAny<float[]>(),
                 It.IsAny<DateTime?>(), It.IsAny<DateTime?>(), It.IsAny<double?>(),
-                It.IsAny<int>(), It.IsAny<int>(), It.IsAny<string>()))
+                It.IsAny<int>(), It.IsAny<int>(), It.IsAny<string>(), It.IsAny<LessonSource?>()))
             .ReturnsAsync(Result<PaginatedSearchResult>.Success(new PaginatedSearchResult()));
 
         var req = FakeHttpRequestData.WithJson(ValidSearchRequest);
@@ -345,7 +345,7 @@ public class LessonLearnedFunctionsTests
     {
         SetupEmbeddingSuccess();
         _search
-            .Setup(s => s.SuggestLessonsAsync(It.IsAny<string>(), It.IsAny<float[]>(), It.IsAny<int>(), It.IsAny<string>()))
+            .Setup(s => s.SuggestLessonsAsync(It.IsAny<string>(), It.IsAny<float[]>(), It.IsAny<int>(), It.IsAny<string>(), It.IsAny<LessonSource?>()))
             .ReturnsAsync(Result<List<SuggestionResult>>.Failure("Search error"));
 
         var req = FakeHttpRequestData.WithJson(new SuggestLessonRequest { Query = "caída" });
@@ -358,7 +358,7 @@ public class LessonLearnedFunctionsTests
     {
         SetupEmbeddingSuccess();
         _search
-            .Setup(s => s.SuggestLessonsAsync(It.IsAny<string>(), It.IsAny<float[]>(), It.IsAny<int>(), It.IsAny<string>()))
+            .Setup(s => s.SuggestLessonsAsync(It.IsAny<string>(), It.IsAny<float[]>(), It.IsAny<int>(), It.IsAny<string>(), It.IsAny<LessonSource?>()))
             .ReturnsAsync(Result<List<SuggestionResult>>.Success(new List<SuggestionResult>
             {
                 new() { Id = "1", Code = "EVT-001", Highlights = new() { "...caída desde altura..." } }

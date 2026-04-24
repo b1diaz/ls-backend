@@ -4,6 +4,12 @@ using System.Text.Json.Serialization;
 
 namespace LeccionesAprendidas.Models;
 
+public enum LessonSource
+{
+    Anyi = 1,
+    Kimy = 2
+}
+
 public class LessonLearned
 {
     /// <summary>
@@ -68,6 +74,12 @@ public class LessonLearned
     public DateTime DateTime { get; set; }
 
     /// <summary>
+    /// Fuente de la leccion aprendida (Anyi = 1, Kimy = 2). Null si no aplica.
+    /// </summary>
+    [JsonPropertyName("source")]
+    public LessonSource? Source { get; set; }
+
+    /// <summary>
     /// Texto combinado de todos los campos relevantes, usado para búsqueda semántica e indexación.
     /// El orden prioriza el contenido sustancial. Los valores vacíos o "N/A" se omiten para evitar ruido.
     /// </summary>
@@ -125,6 +137,7 @@ public class LessonLearnedDetail
     public string Lesson { get; init; } = string.Empty;
     public DateTime DateTime { get; init; }
     public string SearchContent { get; init; } = string.Empty;
+    public LessonSource? Source { get; init; }
 
     public static LessonLearnedDetail From(LessonLearned l) => new()
     {
@@ -138,7 +151,8 @@ public class LessonLearnedDetail
         Consequences   = l.Consequences,
         Lesson         = l.Lesson,
         DateTime       = l.DateTime,
-        SearchContent  = l.SearchContent
+        SearchContent  = l.SearchContent,
+        Source         = l.Source
     };
 }
 

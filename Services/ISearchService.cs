@@ -16,6 +16,7 @@ public interface ISearchService
         double? minScore,
         int pageNumber,
         int pageSize,
-        string field = "searchContent");
-    Task<Result<List<SuggestionResult>>> SuggestLessonsAsync(string queryText, float[] queryEmbedding, int size = 5, string field = "searchContent");
+        string field = "searchContent",
+        LessonSource? source = null);
+    Task<Result<List<SuggestionResult>>> SuggestLessonsAsync(string queryText, float[] queryEmbedding, int size = 5, string field = "searchContent", LessonSource? source = null);
 }

@@ -83,6 +83,10 @@ public class SearchService : ISearchService
                     IsFilterable = true,
                     IsSortable = true
                 },
+                new SimpleField("source", SearchFieldDataType.Int32)
+                {
+                    IsFilterable = true
+                },
                 // Embeddings vectoriales por campo
                 new SearchField("searchContentEmbedding", SearchFieldDataType.Collection(SearchFieldDataType.Single))
                 {
@@ -145,7 +149,7 @@ public class SearchService : ISearchService
             var existingIndex = await _adminClient.GetIndexAsync(_indexName);
             
             // Verificar si el índice tiene la estructura correcta
-            var requiredFields = new[] { "searchContentEmbedding", "descriptionEmbedding", "analysisEmbedding", "consequencesEmbedding", "lessonEmbedding" };
+            var requiredFields = new[] { "searchContentEmbedding", "descriptionEmbedding", "analysisEmbedding", "consequencesEmbedding", "lessonEmbedding", "source" };
             var existingFieldNames = existingIndex.Value.Fields.Select(f => f.Name).ToHashSet();
             
             bool hasRequiredFields = requiredFields.All(field => existingFieldNames.Contains(field));
@@ -279,7 +283,8 @@ public class SearchService : ISearchService
         double? minScore = null,
         int pageNumber = 1,
         int pageSize = 10,
-        string field = "searchContent")
+        string field = "searchContent",
+        LessonSource? source = null)
     {
         try
         {
@@ -298,7 +303,7 @@ public class SearchService : ISearchService
                 Size = take,
                 Skip = skip,
                 IncludeTotalCount = true,
-                Select = { "id", "code", "description", "lesson", "situationType", "location", "relatedPosition", "analysis", "consequences", "dateTime", "searchContent" }
+                Select = { "id", "code", "description", "lesson", "situationType", "location", "relatedPosition", "analysis", "consequences", "dateTime", "searchContent", "source" }
             };
 
             // Construir filtro OData para fechas
@@ -315,12 +320,15 @@ public class SearchService : ISearchService
             
             if (dateTo.HasValue)
             {
-                var dateToOffset = dateTo.Value.Kind == DateTimeKind.Unspecified 
+                var dateToOffset = dateTo.Value.Kind == DateTimeKind.Unspecified
                     ? new DateTimeOffset(dateTo.Value, TimeSpan.Zero)
                     : new DateTimeOffset(dateTo.Value);
                 // Formato OData para DateTimeOffset: yyyy-MM-ddTHH:mm:ss.fffZ
                 filters.Add($"dateTime le {dateToOffset:O}");
             }
+
+            if (source.HasValue)
+                filters.Add($"source eq {(int)source.Value}");
 
             if (filters.Any())
             {
@@ -437,7 +445,7 @@ public class SearchService : ISearchService
         return snippet;
     }
 
-    public async Task<Result<List<SuggestionResult>>> SuggestLessonsAsync(string queryText, float[] queryEmbedding, int size = 5, string field = "searchContent")
+    public async Task<Result<List<SuggestionResult>>> SuggestLessonsAsync(string queryText, float[] queryEmbedding, int size = 5, string field = "searchContent", LessonSource? source = null)
     {
         try
         {
@@ -450,6 +458,9 @@ public class SearchService : ISearchService
                 HighlightPreTag = "<mark>",
                 HighlightPostTag = "</mark>"
             };
+            if (source.HasValue)
+                options.Filter = $"source eq {(int)source.Value}";
+
             options.Select.Add("id");
             options.Select.Add("code");
             options.Select.Add(searchField);          // necesario para el fallback excerpt

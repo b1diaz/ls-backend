@@ -50,6 +50,11 @@ public class CreateLessonRequest
     public string LessonLearned { get; set; } = string.Empty;
 
     /// <summary>
+    /// Fuente de la leccion aprendida (Anyi = 1, Kimy = 2). Null si no aplica.
+    /// </summary>
+    public LessonSource? Source { get; set; }
+
+    /// <summary>
     /// Campo combinado con los campos de contenido principal, usado para búsqueda semántica.
     /// </summary>
     public string SearchContent => $"{Consequences}. {Description}. {Analysis}. {LessonLearned}";
@@ -95,6 +100,11 @@ public class SearchLessonRequest
     /// Por defecto es searchContent.
     /// </summary>
     public string? Field { get; set; }
+
+    /// <summary>
+    /// Filtro por fuente (Anyi = 1, Kimy = 2). Null busca en todos los registros.
+    /// </summary>
+    public LessonSource? Source { get; set; }
 }
 
 public class SuggestLessonRequest
@@ -115,6 +125,11 @@ public class SuggestLessonRequest
     /// Por defecto es searchContent.
     /// </summary>
     public string? Field { get; set; }
+
+    /// <summary>
+    /// Filtro por fuente (Anyi = 1, Kimy = 2). Null busca en todos los registros.
+    /// </summary>
+    public LessonSource? Source { get; set; }
 }
 
 public class SuggestionResult

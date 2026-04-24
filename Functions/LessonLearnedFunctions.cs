@@ -60,7 +60,8 @@ public class LessonLearnedFunctions
             Analysis = request.Analysis,
             Consequences = request.Consequences,
             Lesson = request.LessonLearned,
-            DateTime = request.DateTime
+            DateTime = request.DateTime,
+            Source = request.Source
         };
 
         // Generar embeddings en paralelo para todos los campos con contenido
@@ -163,7 +164,8 @@ public class LessonLearnedFunctions
             request.MinScore,
             request.PageNumber,
             request.PageSize,
-            request.Field ?? "searchContent");
+            request.Field ?? "searchContent",
+            request.Source);
 
         if (searchResult.IsError)
             return await CreateErrorResponse(req, HttpStatusCode.InternalServerError, searchResult.Error ?? "Unknown error searching lessons.");
@@ -229,7 +231,7 @@ public class LessonLearnedFunctions
         if (embeddingResult.IsError)
             return await CreateErrorResponse(req, HttpStatusCode.InternalServerError, embeddingResult.Error ?? "Unknown error generating embedding.");
 
-        var suggestResult = await _searchService.SuggestLessonsAsync(request.Query, embeddingResult.Value!, request.Size, request.Field ?? "searchContent");
+        var suggestResult = await _searchService.SuggestLessonsAsync(request.Query, embeddingResult.Value!, request.Size, request.Field ?? "searchContent", request.Source);
         if (suggestResult.IsError)
             return await CreateErrorResponse(req, HttpStatusCode.InternalServerError, suggestResult.Error ?? "Unknown error fetching suggestions.");
 
