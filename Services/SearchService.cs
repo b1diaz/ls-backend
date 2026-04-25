@@ -296,34 +296,32 @@ public class SearchService : ISearchService
             var skip = (validPageNumber - 1) * validPageSize;
             var take = validPageSize;
 
-            // Para obtener el total, necesitamos hacer una búsqueda sin límite primero
-            // Azure Search no proporciona TotalCount directamente, así que usaremos IncludeTotalCount
+            const int maxCandidates = 1000;
+
+            // Traer todos los candidatos de Azure Search sin paginar,
+            // para aplicar MinScore sobre el total real y luego paginar en memoria
             var options = new SearchOptions
             {
-                Size = take,
-                Skip = skip,
-                IncludeTotalCount = true,
+                Size = maxCandidates,
                 Select = { "id", "code", "description", "lesson", "situationType", "location", "relatedPosition", "analysis", "consequences", "dateTime", "searchContent", "source" }
             };
 
-            // Construir filtro OData para fechas
+            // Construir filtro OData
             var filters = new List<string>();
-            
+
             if (dateFrom.HasValue)
             {
-                var dateFromOffset = dateFrom.Value.Kind == DateTimeKind.Unspecified 
+                var dateFromOffset = dateFrom.Value.Kind == DateTimeKind.Unspecified
                     ? new DateTimeOffset(dateFrom.Value, TimeSpan.Zero)
                     : new DateTimeOffset(dateFrom.Value);
-                // Formato OData para DateTimeOffset: yyyy-MM-ddTHH:mm:ss.fffZ
                 filters.Add($"dateTime ge {dateFromOffset:O}");
             }
-            
+
             if (dateTo.HasValue)
             {
                 var dateToOffset = dateTo.Value.Kind == DateTimeKind.Unspecified
                     ? new DateTimeOffset(dateTo.Value, TimeSpan.Zero)
                     : new DateTimeOffset(dateTo.Value);
-                // Formato OData para DateTimeOffset: yyyy-MM-ddTHH:mm:ss.fffZ
                 filters.Add($"dateTime le {dateToOffset:O}");
             }
 
@@ -331,50 +329,35 @@ public class SearchService : ISearchService
                 filters.Add($"source eq {(int)source.Value}");
 
             if (filters.Any())
-            {
                 options.Filter = string.Join(" and ", filters);
-            }
 
             // Seleccionar embedding del campo solicitado
             var embeddingField = FieldToEmbedding.TryGetValue(field, out var ef) ? ef : "searchContentEmbedding";
 
-            // KNearestNeighborsCount alto para que Azure Search evalúe suficientes candidatos
-            // y TotalCount refleje el total real, no solo los de la página actual
-            const int maxCandidates = 1000;
-
-            options.VectorSearch ??= new VectorSearchOptions();
+            options.VectorSearch = new VectorSearchOptions();
             options.VectorSearch.Queries.Add(new VectorizedQuery(queryEmbedding)
             {
-                KNearestNeighborsCount = Math.Max(maxCandidates, skip + take),
+                KNearestNeighborsCount = maxCandidates,
                 Fields = { embeddingField }
             });
 
             var response = await _searchClient.SearchAsync<LessonLearned>(null, options);
-            var results = response.Value.GetResults();
-            var totalCount = response.Value.TotalCount ?? 0;
 
-            // Aplicar filtro de score mínimo (Azure Search devuelve scores de 0 a 1)
+            // Aplicar MinScore sobre todos los candidatos y luego paginar en memoria
             var minScoreValue = minScore ?? 0.0;
-            var mapped = results
-                .Select(r =>
+            var allFiltered = response.Value.GetResults()
+                .Select(r => new SearchResult
                 {
-                    var score = Math.Round(r.Score ?? 0.0, 4);
-                    return new SearchResult
-                    {
-                        Lesson = r.Document,
-                        Score = score
-                    };
+                    Lesson = r.Document,
+                    Score = Math.Round(r.Score ?? 0.0, 4)
                 })
                 .Where(r => r.Score >= minScoreValue)
                 .ToList();
 
-            // Nota: El TotalCount de Azure Search incluye todos los resultados antes del filtro de MinScore
-            // Si necesitamos un TotalCount más preciso, tendríamos que hacer una segunda búsqueda sin paginación
-            // Por ahora, usamos el TotalCount aproximado de Azure Search
             var paginatedResult = new PaginatedSearchResult
             {
-                Results = mapped,
-                TotalCount = (int)totalCount,
+                Results = allFiltered.Skip(skip).Take(take).ToList(),
+                TotalCount = allFiltered.Count,
                 PageNumber = validPageNumber,
                 PageSize = validPageSize
             };
