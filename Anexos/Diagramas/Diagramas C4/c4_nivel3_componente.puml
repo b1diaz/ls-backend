@@ -1,0 +1,40 @@
+@startuml C4 Nivel 3 - Componentes del Backend
+!include <C4/C4_Component>
+
+title C4 Nivel 3 - Componentes: Backend Azure Functions (ls-backend)
+
+Container_Ext(frontend, "Frontend SPA", "React / TypeScript", "Interfaz web del usuario")
+
+Container_Boundary(backend, "Backend API - Azure Functions (.NET 8)") {
+
+    Component(functions, "LessonLearnedFunctions", "Azure Functions\nHTTP Triggers", "Expone 3 endpoints:\n- RegisterLesson (POST)\n- SearchLessons (POST)\n- RecreateIndex (POST)\nValida entradas con FluentValidation\ny orquesta los servicios.")
+
+    Component(openaiSvc, "OpenAIService", "C# Service / Singleton", "Genera embeddings vectoriales\npara cada campo de texto\n(descripcion, analisis,\nconsecuencias, aprendizaje)\nusando Azure.AI.OpenAI SDK.")
+
+    Component(cosmosSvc, "CosmosDbService", "C# Service / Singleton", "Persiste lecciones aprendidas\ncomo documentos JSON en\nAzure Cosmos DB.\nOperaciones: CreateLesson,\nGetLessons.")
+
+    Component(searchSvc, "SearchService", "C# Service / Singleton", "Gestiona el indice vectorial\nHNSW en Azure AI Search.\nOperaciones: CreateIndex,\nIndexLesson, SearchLessons,\nRecreateIndex.\nSoporta filtros OData y\npaginacion.")
+
+    Component(models, "Models", "C# Domain Models", "LessonLearned: entidad principal\ncon 4 campos de embedding.\nCreateLessonRequest: DTO entrada.\nSearchLessonRequest: DTO busqueda.\nPaginatedSearchResult: DTO salida.\nSearchFieldType: enum de campos.")
+
+    Component(validations, "Validations", "FluentValidation", "CreateLessonRequestValidator:\nvalida campos obligatorios\nal registrar una leccion.\nSearchLessonRequestValidator:\nvalida query y parametros\nde busqueda.")
+}
+
+System_Ext(azureOpenAI, "Azure OpenAI", "text-embedding-3-large")
+System_Ext(azureCosmosDB, "Azure Cosmos DB", "NoSQL Document Store")
+System_Ext(azureSearch, "Azure AI Search", "Vector Search HNSW")
+
+Rel(frontend, functions, "POST /searchlessons\nPOST /registerlesson", "HTTPS / JSON / API Key")
+
+Rel(functions, validations, "Valida request\nantes de procesar")
+Rel(functions, openaiSvc, "Genera embeddings\npor campo de texto")
+Rel(functions, cosmosSvc, "Persiste leccion\naprendida")
+Rel(functions, searchSvc, "Indexa y busca\nlecciones")
+Rel(functions, models, "Usa DTOs y\nentidades de dominio")
+
+Rel(openaiSvc, azureOpenAI, "GetEmbeddingsAsync()\n3072 dims / coseno", "HTTPS")
+Rel(cosmosSvc, azureCosmosDB, "CreateItemAsync()\nGetItemQueryIterator()", "HTTPS")
+Rel(searchSvc, azureSearch, "CreateIndex / IndexDocuments\nSearchAsync() vectorial", "HTTPS")
+
+SHOW_LEGEND()
+@enduml

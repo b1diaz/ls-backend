@@ -1,0 +1,28 @@
+@startuml C4 Nivel 2 - Contenedores
+!include <C4/C4_Container>
+
+title C4 Nivel 2 - Contenedores: Sistema de Gestion de Lecciones Aprendidas HSEQ
+
+Person(usuarioHSEQ, "Usuario HSEQ", "Profesional de seguridad\nque busca lecciones aprendidas")
+
+System_Boundary(sistemaLA, "Sistema de Gestion de Lecciones Aprendidas") {
+
+    Container(frontend, "Frontend SPA", "React 18 / TypeScript / Vite\nTailwind CSS / React Query", "Interfaz web para busqueda\nde lecciones aprendidas.\nRutas: /, /home, /lesson/:id,\n/instrucciones")
+
+    Container(backend, "Backend API", "Azure Functions (.NET 8)\nIsolated Worker Process", "API serverless con HTTP triggers:\nRegisterLesson, SearchLessons,\nRecreateIndex. Orquesta\ngeneracion de embeddings,\npersistencia y busqueda.")
+}
+
+System_Ext(azureOpenAI, "Azure OpenAI", "text-embedding-3-large\n(3072 dimensiones)\nGenera embeddings vectoriales\npor campo: descripcion, analisis,\nconsecuencias, aprendizaje")
+
+System_Ext(azureCosmosDB, "Azure Cosmos DB", "Base de datos NoSQL\nAlmacena documentos JSON\nde lecciones aprendidas\ncon embeddings incluidos")
+
+System_Ext(azureSearch, "Azure AI Search", "Indice vectorial HNSW\nBusqueda por similitud coseno\nFiltros OData por fecha\nPaginacion de resultados")
+
+Rel(usuarioHSEQ, frontend, "Accede via navegador web", "HTTPS")
+Rel(frontend, backend, "Llama endpoints HTTP\n(SearchLessons)", "HTTPS / JSON / API Key")
+Rel(backend, azureOpenAI, "Genera embeddings\npor campo de texto", "HTTPS / Azure SDK")
+Rel(backend, azureCosmosDB, "Persiste y recupera\nlecciones aprendidas", "HTTPS / Cosmos SDK")
+Rel(backend, azureSearch, "Indexa documentos y\nejecutra busqueda vectorial", "HTTPS / Search SDK")
+
+SHOW_LEGEND()
+@enduml

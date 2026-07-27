@@ -1,0 +1,77 @@
+@startuml Diagrama de Flujo - Busqueda de Lecciones Aprendidas v2
+title Flujo de Busqueda de Lecciones Aprendidas HSEQ
+
+start
+
+:Abrir aplicacion (/);
+:Ingresar query y configurar filtros\n(campo, fechas, score, pagina);
+:Clic en Buscar;
+
+if (Validacion frontend?) then (ok)
+
+  :POST /searchlessons (Azure Functions);
+
+  if (Validacion backend?) then (ok)
+
+    :Generar embedding del query\n(Azure OpenAI - 3072 dims);
+
+    if (Embedding generado?) then (ok)
+
+      :Busqueda vectorial en Azure AI Search\n(HNSW / coseno / filtros OData);
+
+      if (Busqueda exitosa?) then (ok)
+
+        :Aplicar filtro MinScore\ny paginar resultados;
+
+        if (Hay resultados?) then (si)
+
+          :Mostrar tarjetas ordenadas por score;
+
+          if (Mas de una pagina?) then (si)
+            :Mostrar controles de paginacion;
+            if (Usuario cambia de pagina?) then (si)
+              :Nueva llamada con PageNumber actualizado;
+            else (no)
+            endif
+          else (no)
+          endif
+
+          :Mostrar info de paginacion\n(Mostrando X-Y de Z resultados);
+
+          if (Usuario abre detalle?) then (si)
+            :Marcar leccion como visitada;
+            :Navegar a /lesson/:id;
+            :Ver detalle completo de la leccion;
+            if (Usuario vuelve?) then (si)
+              :Regresar a resultados\n(contexto preservado);
+            else (no)
+            endif
+          else (no)
+          endif
+
+        else (no)
+          :Mostrar EmptyState\n(sin resultados);
+        endif
+
+      else (error)
+        :HTTP 500 - Error en busqueda;
+        :Mostrar toast de error;
+      endif
+
+    else (error)
+      :HTTP 500 - Error al generar embedding;
+      :Mostrar toast de error;
+    endif
+
+  else (falla)
+    :HTTP 400 - Bad Request;
+    :Mostrar toast de error;
+  endif
+
+else (falla)
+  :Mostrar error de validacion en pantalla;
+endif
+
+stop
+
+@enduml

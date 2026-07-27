@@ -1,0 +1,116 @@
+@startuml Diagrama de Secuencia - Busqueda de Lecciones Aprendidas
+title Diagrama de Secuencia: Busqueda de Lecciones Aprendidas HSEQ
+
+actor "Usuario HSEQ" as User
+participant "Frontend\n(React SPA)" as FE
+participant "Azure Functions\n(LessonLearnedFunctions)" as AF
+participant "OpenAIService" as OAI
+participant "SearchService" as SS
+participant "Azure OpenAI\n(text-embedding-3-large)" as AOAI
+participant "Azure AI Search\n(Indice HNSW)" as AIS
+
+== Ingreso de consulta ==
+
+User -> FE : Ingresa query + configura filtros\n(campo, fechas, minScore, pageSize)
+FE -> FE : handleSearch()\nValida: query no vacio,\nlongitud >= 3 chars,\nrango fechas valido,\nminScore en [0,1]
+
+alt Validacion frontend falla
+    FE --> User : Muestra toast de error
+else Validacion OK
+    FE -> FE : Construye SearchParams\n{Query, SearchField, DateFrom?,\nDateTo?, MinScore,\nPageNumber=1, PageSize}
+    FE -> FE : isLoading = true\n(activa overlay de carga)
+
+    == Llamada al backend ==
+
+    FE -> AF : POST /searchlessons?code=<apiKey>\nContent-Type: application/json\nbody: SearchLessonRequest
+
+    AF -> AF : Deserializa JSON\na SearchLessonRequest
+
+    AF -> AF : SearchLessonRequestValidator\n.ValidateAsync(request)
+
+    alt Validacion backend falla
+        AF --> FE : HTTP 400 Bad Request\n(detalle de errores)
+        FE -> FE : isLoading = false
+        FE --> User : Muestra toast de error
+    else Validacion OK
+
+        == Generacion de embedding ==
+
+        AF -> OAI : GenerateEmbeddingAsync(request.Query)
+        OAI -> AOAI : GetEmbeddingsAsync(\n  deployment: text-embedding-3-large,\n  input: [queryText])
+        AOAI --> OAI : Embedding (float[3072])
+        OAI --> AF : Result<float[]>.Success(embedding)
+
+        alt Error al generar embedding
+            AF --> FE : HTTP 500 Error embedding
+            FE -> FE : isLoading = false
+            FE --> User : Muestra toast de error
+        else Embedding generado OK
+
+            == Busqueda vectorial ==
+
+            AF -> SS : SearchLessonsAsync(\n  queryText, queryEmbedding,\n  searchField, dateFrom?, dateTo?,\n  minScore?, pageNumber, pageSize)
+
+            SS -> SS : Determina embeddingField\nsegun SearchFieldType enum\n(description / analysis /\nconsequences / lesson)
+
+            SS -> SS : Configura SearchOptions:\n- Size = pageSize\n- Skip = (page-1) * size\n- IncludeTotalCount = true\n- Filter OData (fechas si aplica)
+
+            SS -> SS : Configura VectorizedQuery:\n- vector = queryEmbedding\n- KNearestNeighborsCount = pageSize\n- fields = [embeddingField]
+
+            SS -> AIS : SearchAsync<LessonLearned>(\n  "", searchOptions)
+            AIS -> AIS : Ejecuta HNSW\n(EfSearch=500)\nCalcula similitud coseno\nentre query y documentos
+            AIS --> SS : SearchResults +\nTotalCount
+
+            SS -> SS : Filtra resultados con\nscore < minScore
+            SS -> SS : Construye PaginatedSearchResult\n{Results[], TotalCount,\nPageNumber, PageSize, TotalPages}
+            SS --> AF : Result<PaginatedSearchResult>.Success(...)
+
+            alt Error en busqueda
+                AF --> FE : HTTP 500 Error busqueda
+                FE -> FE : isLoading = false
+                FE --> User : Muestra toast de error
+            else Busqueda exitosa
+
+                == Respuesta al usuario ==
+
+                AF --> FE : HTTP 200 OK\nPaginatedSearchResult JSON
+
+                FE -> FE : isLoading = false
+                FE -> FE : Transforma resultados\nal modelo Lesson unificado
+                FE -> FE : Ordena por score DESC\nActualiza estado de paginacion\n(totalCount, totalPages)
+
+                alt Sin resultados (totalCount = 0)
+                    FE --> User : Renderiza EmptyState
+                else Con resultados
+                    FE --> User : Renderiza LessonCards\n(tipo, descripcion, ubicacion,\ncargo, fecha, score)
+
+                    == Navegacion al detalle ==
+
+                    opt Usuario selecciona una leccion
+                        User -> FE : Clic en LessonCard
+                        FE -> FE : markLessonAsVisited(lessonId)
+                        FE -> FE : navigate("/lesson/:id")\npasando Lesson por estado
+                        FE --> User : Renderiza LessonDetailPage\n(todos los campos de la leccion)
+
+                        opt Usuario vuelve a resultados
+                            User -> FE : Clic en Volver
+                            FE -> FE : navigate("/")\ncontexto preservado en memoria
+                            FE --> User : Muestra lista de resultados\nsin nueva busqueda
+                        end
+                    end
+
+                    == Cambio de pagina ==
+
+                    opt Usuario cambia de pagina
+                        User -> FE : Clic en pagina N
+                        FE -> FE : handlePageChange(N)\nReutiliza filtros actuales\ncon nuevo PageNumber
+                        FE -> AF : POST /searchlessons\n(mismos filtros, PageNumber=N)
+                        note right: Repite el flujo\ndesde "Llamada al backend"
+                    end
+                end
+            end
+        end
+    end
+end
+
+@enduml

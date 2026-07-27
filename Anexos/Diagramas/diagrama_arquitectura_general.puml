@@ -1,0 +1,80 @@
+@startuml Diagrama de Arquitectura General v2
+' ============================================================
+' Azure-PlantUML sprites (local)
+' ============================================================
+!define AzurePuml azure-puml
+!include AzurePuml/AzureCommon.puml
+!include AzurePuml/Compute/AzureFunction.puml
+!include AzurePuml/Compute/AzureAppService.puml
+!include AzurePuml/Databases/AzureCosmosDb.puml
+!include AzurePuml/AIMachineLearning/AzureCognitiveServices.puml
+!include AzurePuml/Storage/AzureStorage.puml
+!include AzurePuml/Web/AzureSearch.puml
+
+title Arquitectura General\nSistema de Gestion de Lecciones Aprendidas HSEQ
+
+skinparam backgroundColor #F8F9FA
+skinparam defaultFontName Arial
+skinparam defaultFontSize 11
+skinparam ArrowColor #4A6FA5
+skinparam ArrowThickness 1.5
+
+skinparam rectangle {
+    RoundCorner 10
+    BorderThickness 2
+}
+
+' ============================================================
+' ACTOR USUARIO
+' ============================================================
+
+actor "Usuario HSEQ\n(Navegador Web)" as User #2E4057
+
+' ============================================================
+' CAPA DE PRESENTACION
+' ============================================================
+
+rectangle "Capa de Presentacion" #EEF4FF {
+    AzureAppService(fe, "Frontend SPA", "React 18 + TypeScript\nVite + Tailwind CSS\nReact Query | React Router\n─────────────────\nRutas: /  /home  /lesson/:id\nAmbientes: dev | qa | prod\nAuth: VITE_API_KEY via ?code=")
+}
+
+' ============================================================
+' MICROSOFT AZURE
+' ============================================================
+
+rectangle "Microsoft Azure" #FFF9F0 {
+
+    rectangle "Computo Serverless" #E8F5E9 {
+        AzureFunction(func, "Azure Functions", "dotnet-isolated | .NET 8\nlecciones-aprendidas-func\n.azurewebsites.net\n─────────────────\nPOST /registerlesson\nPOST /searchlessons\nPOST /recreateindex\n─────────────────\nDI: OpenAIService\n    CosmosDbService\n    SearchService\n    FluentValidation")
+
+        AzureStorage(storage, "Azure Storage", "AzureWebJobsStorage\n─────────────────\nRuntime state de\nAzure Functions")
+    }
+
+    rectangle "Inteligencia Artificial" #FDE8F0 {
+        AzureCognitiveServices(openai, "Azure OpenAI", "East US\nalexi-mbig4dgj-eastus\n.cognitiveservices.azure.com\n─────────────────\nModelo:\ntext-embedding-3-large\nDimensiones: 3072\nMetrica: coseno\n─────────────────\nGenera embedding\npor campo de texto")
+
+        AzureSearch(aisearch, "Azure AI Search", "lecciones-search\n.search.windows.net\n─────────────────\nIndice: lecciones-index\nAlgoritmo: HNSW\n  M=4 | EfConstruction=400\n  EfSearch=500\n─────────────────\nCampos vectoriales:\n  descriptionEmbedding\n  analysisEmbedding\n  consequencesEmbedding\n  lessonEmbedding\nFiltros OData: dateTime")
+    }
+
+    rectangle "Persistencia" #FFF3E0 {
+        AzureCosmosDb(cosmos, "Azure Cosmos DB", "API Core SQL (NoSQL)\nlecciones-aprendidas-cosmos\n.documents.azure.com\n─────────────────\nDatabase: LeccionesAprendidas\nContainer: Lecciones\nParticion: /id\n─────────────────\nAlmacena documento JSON\ncon campos de texto\ny 4 vectores embedding")
+    }
+}
+
+' ============================================================
+' RELACIONES
+' ============================================================
+
+User          -down->  fe       : HTTPS (Navegador)
+
+fe            -down->  func     : HTTPS / JSON\nPOST /searchlessons\n?code=<apiKey>
+
+func          -right-> storage  : SDK\nAzureWebJobsStorage
+
+func          -down->  openai   : Azure.AI.OpenAI SDK\nGetEmbeddingsAsync()\nHTTPS + API Key
+
+func          -down->  cosmos   : Microsoft.Azure.Cosmos SDK\nCreateItemAsync()\nHTTPS + API Key
+
+func          -down->  aisearch : Azure.Search.Documents SDK\nSearchAsync() vectorial\nHTTPS + Admin Key
+
+@enduml

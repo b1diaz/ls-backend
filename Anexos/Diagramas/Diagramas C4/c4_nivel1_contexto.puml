@@ -1,0 +1,25 @@
+@startuml C4 Nivel 1 - Contexto del Sistema
+!include <C4/C4_Context>
+
+title C4 Nivel 1 - Contexto: Sistema de Gestion de Lecciones Aprendidas HSEQ
+
+Person(usuarioHSEQ, "Usuario HSEQ", "Profesional de seguridad que\nbusca y registra lecciones\naprendidas de eventos HSEQ")
+
+System(sistemaLA, "Sistema de Gestion de\nLecciones Aprendidas", "Aplicacion web que permite buscar\ny registrar lecciones aprendidas\nde eventos HSEQ mediante busqueda\nsemantica con inteligencia artificial")
+
+System_Ext(azureOpenAI, "Azure OpenAI", "Servicio de IA de Microsoft Azure\nque genera embeddings vectoriales\n(text-embedding-3-large, 3072 dims)")
+
+System_Ext(azureCosmosDB, "Azure Cosmos DB", "Base de datos NoSQL de Azure\npara almacenamiento persistente\nde lecciones aprendidas")
+
+System_Ext(azureSearch, "Azure AI Search", "Motor de busqueda vectorial de Azure\ncon algoritmo HNSW para busqueda\nsemantica por similitud coseno")
+
+Rel(usuarioHSEQ, sistemaLA, "Busca y consulta\nlecciones aprendidas", "HTTPS / Browser")
+
+Rel(sistemaLA, azureOpenAI, "Genera embeddings\nvectoriales del texto", "HTTPS / REST API")
+
+Rel(sistemaLA, azureCosmosDB, "Almacena y recupera\nlecciones aprendidas", "HTTPS / SDK")
+
+Rel(sistemaLA, azureSearch, "Indexa documentos y\nejecutra busqueda vectorial", "HTTPS / SDK")
+
+SHOW_LEGEND()
+@enduml
